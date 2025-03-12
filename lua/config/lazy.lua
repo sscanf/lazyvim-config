@@ -54,3 +54,22 @@ require("lazy").setup({
     },
   },
 })
+
+-- require("lspconfig").ruff.setup({
+--     on_attach = function(client, bufnr)
+--         client.server_capabilities.documentFormattingProvider = false
+--     end,
+-- })
+
+ require("lspconfig").ruff.setup({
+   init_options = {
+     settings = {
+       args = {
+         "--line-length=120",
+       },
+     },
+   },
+ })
+
+
+
