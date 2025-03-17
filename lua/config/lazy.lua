@@ -135,8 +135,18 @@ end
 vim.keymap.set("n", "<leader>dl", function()
   local buf = get_log_buffer()
   if buf and vim.api.nvim_buf_is_valid(buf) then
-    vim.cmd("split | buffer " .. buf)
+    vim.cmd("bdelete | split | buffer " .. buf)
   else
     vim.notify("No hay logs disponibles", vim.log.levels.WARN)
   end
-end, { desc = "Mostrar logs de depuración" })
+end, { desc = "Show debug logs" })
+
+-- Atajo para cerrar los logs
+vim.keymap.set("n", "<leader>dc", function()
+  local buf = get_log_buffer()
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.cmd("bdelete" .. buf)
+  else
+    vim.notify("No hay logs disponibles", vim.log.levels.WARN)
+  end
+end, { desc = "Close debug logs" })
