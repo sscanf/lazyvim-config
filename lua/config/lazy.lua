@@ -55,6 +55,13 @@ require("lazy").setup({
   },
 })
 
+require("gitsigns").setup({
+  current_line_blame = true,
+
+  vim.keymap.set("n", "<leader>gp", ":Gitsigns preview_hunk<CR>", {}),
+  vim.keymap.set("n", "<leader>gt", ":Gitsigns toggle_current_line_blame", {}),
+})
+
 -- require("lspconfig").ruff.setup({
 --     on_attach = function(client, bufnr)
 --         client.server_capabilities.documentFormattingProvider = false
@@ -85,11 +92,11 @@ dap.configurations.python = {
   {
     type = "python",
     request = "launch",
-    name = "Depurar archivo actual",
-    program = "${file}", -- Usa el archivo actual
+    name = "Depurar archivo fijo",
+    program = os.getenv("DEBUG_EXEC") or "${file}",
     args = os.getenv("DEBUG_ARGS") and vim.split(os.getenv("DEBUG_ARGS"), " ") or {},
     pythonPath = function()
-      return "python" -- Ruta a tu intérprete (ajusta si es necesario)
+      return "python"
     end,
   },
 }
@@ -113,6 +120,8 @@ end
 dap.listeners.before["event_output"]["log_output"] = function(_, body)
   local buf = get_log_buffer()
   if buf and vim.api.nvim_buf_is_valid(buf) then
+    -- Limpia el buffer antes de agregar nuevas líneas
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
     -- Usa vim.schedule para evitar problemas de hilos
     vim.schedule(function()
       local lines = vim.split(body.output, "\n")
@@ -135,18 +144,25 @@ end
 vim.keymap.set("n", "<leader>dl", function()
   local buf = get_log_buffer()
   if buf and vim.api.nvim_buf_is_valid(buf) then
-    vim.cmd("bdelete | split | buffer " .. buf)
+    local win_id = vim.fn.bufwinid(buf)
+    if win_id ~= -1 then
+      vim.cmd("hide")
+    end
+    vim.cmd("split | buffer " .. buf)
   else
     vim.notify("No hay logs disponibles", vim.log.levels.WARN)
   end
 end, { desc = "Show debug logs" })
 
 -- Atajo para cerrar los logs
-vim.keymap.set("n", "<leader>dc", function()
+vim.keymap.set("n", "<leader>dh", function()
   local buf = get_log_buffer()
   if buf and vim.api.nvim_buf_is_valid(buf) then
-    vim.cmd("bdelete" .. buf)
+    local win_id = vim.fn.bufwinid(buf)
+    if win_id ~= -1 then
+      vim.cmd("hide")
+    end
   else
     vim.notify("No hay logs disponibles", vim.log.levels.WARN)
   end
-end, { desc = "Close debug logs" })
+end, { desc = "Hide debug logs" })
