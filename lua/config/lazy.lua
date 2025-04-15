@@ -101,6 +101,31 @@ dap.configurations.python = {
   },
 }
 
+dap.adapters.cppdbg = {
+  id = "cppdbg",
+  type = "executable",
+  command = "/home/parallels/.vscode/extensions/ms-vscode.cpptools-1.23.6-linux-x64/debugAdapters/bin/OpenDebugAD7",
+}
+
+dap.configurations.cpp = {
+  {
+    name = "Remote GDB",
+    type = "cppdbg",
+    request = "launch",
+    MIMode = "gdb",
+    miDebuggerServerAddress = os.getenv("REMOTE_DEBUG_IP") .. ":10000", -- IP desde variable
+    miDebuggerPath = os.getenv("REMOTE_DEBUG_GDB_PATH"), -- Ruta desde variable
+    cwd = "${workspaceFolder}",
+    program = "${workspaceFolder}/out/Debug/manager/zotouch-core",
+    setupCommands = {
+      {
+        text = "-enable-pretty-printing",
+        ignoreFailures = false,
+      },
+    },
+  },
+}
+
 -- Usa una tabla para almacenar el buffer de logs y evitar problemas de ámbito
 local debug_logs = {
   buffer = nil,

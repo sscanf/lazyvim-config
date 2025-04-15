@@ -16,13 +16,17 @@ vim.api.nvim_set_keymap(
   { noremap = true, silent = true, desc = "Switch between source and header" }
 )
 
+vim.keymap.set("n", "<leader>bA", function()
+  local pos = vim.api.nvim_win_get_cursor(0) -- Guarda la posición del cursor
+  vim.cmd("normal! ggVG") -- Selecciona todo el buffer
+end, { desc = "Selecciona todo el buffer sin mover el cursor" })
+
 vim.api.nvim_set_keymap("n", "<Tab>", ":bnext<CR>", { noremap = true, silent = true, desc = "Siguiente Buffer" })
 vim.api.nvim_set_keymap("n", "<S-Tab>", ":bprevious<CR>", { noremap = true, silent = true, desc = "Buffer Anterior" })
 
 vim.api.nvim_set_keymap("n", "<Esc>", "<leader>dh", { noremap = false, silent = true, desc = "Buffer Anterior" })
 
-vim.api.nvim_set_keymap('n', '<S-F5>', ':split | terminal<CR>', { noremap = true, silent = true })
-
+vim.api.nvim_set_keymap("n", "<S-F5>", ":split | terminal<CR>", { noremap = true, silent = true })
 
 vim.api.nvim_set_keymap(
   "n",
