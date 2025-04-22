@@ -107,24 +107,36 @@ dap.adapters.cppdbg = {
   command = "/home/parallels/.vscode/extensions/ms-vscode.cpptools-1.23.6-linux-x64/debugAdapters/bin/OpenDebugAD7",
 }
 
-dap.configurations.cpp = {
-  {
-    name = "Remote GDB",
-    type = "cppdbg",
-    request = "launch",
-    MIMode = "gdb",
-    miDebuggerServerAddress = os.getenv("REMOTE_DEBUG_IP") .. ":10000", -- IP desde variable
-    miDebuggerPath = os.getenv("REMOTE_DEBUG_GDB_PATH"), -- Ruta desde variable
-    cwd = "${workspaceFolder}",
-    program = "${workspaceFolder}/out/Debug/manager/zotouch-core",
-    setupCommands = {
-      {
-        text = "-enable-pretty-printing",
-        ignoreFailures = false,
+local remote_ip = os.getenv("REMOTE_HOST")
+local gdb_path = os.getenv("REMOTE_DEBUG_GDB_PATH")
+local program_path = os.getenv("PROGRAM_PATH")
+
+if remote_ip and gdb_path then
+  dap.configurations.cpp = {
+    {
+      name = "Remote GDB",
+      type = "cppdbg",
+      request = "launch",
+      MIMode = "gdb",
+      miDebuggerServerAddress = remote_ip .. ":10000",
+      miDebuggerPath = gdb_path,
+      cwd = "${workspaceFolder}",
+      program = program_path,
+      setupCommands = {
+        {
+          text = "-enable-pretty-printing",
+          ignoreFailures = false,
+        },
       },
     },
-  },
-}
+  }
+end
+
+
+require("cmake-tools").setup({
+  cmake_build_args = { "-j", tostring(vim.loop.cpu_info() and #vim.loop.cpu_info() or 4) },
+})
+
 
 -- Usa una tabla para almacenar el buffer de logs y evitar problemas de ámbito
 local debug_logs = {
