@@ -101,11 +101,30 @@ dap.configurations.python = {
   },
 }
 
-dap.adapters.cppdbg = {
-  id = "cppdbg",
-  type = "executable",
-  command = "/home/parallels/.vscode/extensions/ms-vscode.cpptools-1.23.6-linux-x64/debugAdapters/bin/OpenDebugAD7",
-}
+--dap.adapters.cppdbg = {
+--  id = "cppdbg",
+--  type = "executable",
+--  command = "/home/parallels/.vscode/extensions/ms-vscode.cpptools-1.23.6-linux-x64/debugAdapters/bin/OpenDebugAD7",
+--}
+
+-- Cargar configuración DAP específica del proyecto si existe
+local function load_project_dap_config()
+  local project_root = vim.fn.getcwd()
+  local dap_config_file = project_root .. "/.nvim/dap.lua"
+  if vim.fn.filereadable(dap_config_file) == 1 then
+    local ok, err = pcall(dofile, dap_config_file)
+    if not ok then
+      vim.notify("Error loading project dap config: " .. err, vim.log.levels.ERROR)
+    else
+      vim.notify("Loaded project-specific DAP config", vim.log.levels.INFO)
+    end
+  end
+end
+
+-- Llama a la función cuando abras un proyecto
+vim.api.nvim_create_autocmd("VimEnter", {
+  callback = load_project_dap_config,
+})
 
 local remote_ip = os.getenv("REMOTE_HOST")
 local gdb_path = os.getenv("REMOTE_DEBUG_GDB_PATH")
@@ -132,11 +151,9 @@ if remote_ip and gdb_path then
   }
 end
 
-
 require("cmake-tools").setup({
   cmake_build_args = { "-j", tostring(vim.loop.cpu_info() and #vim.loop.cpu_info() or 4) },
 })
-
 
 -- Usa una tabla para almacenar el buffer de logs y evitar problemas de ámbito
 local debug_logs = {
