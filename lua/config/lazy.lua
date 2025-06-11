@@ -126,31 +126,111 @@ vim.api.nvim_create_autocmd("VimEnter", {
   callback = load_project_dap_config,
 })
 
-local remote_ip = os.getenv("REMOTE_HOST")
+local remote_host = os.getenv("REMOTE_HOST")
+local ssh_port = os.getenv("REMOTE_SSH_PORT") or "2222"
+local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or "10000"
 local gdb_path = os.getenv("REMOTE_DEBUG_GDB_PATH")
-local program_path = os.getenv("PROGRAM_PATH")
+local deploy_base = os.getenv("DEPLOY_REMOTE_BASE_PATH")
+local remote_bin = os.getenv("REMOTE_BINARY_NAME")
 
-if remote_ip and gdb_path then
-  dap.configurations.cpp = {
-    {
-      name = "Remote GDB",
-      type = "cppdbg",
-      request = "launch",
-      MIMode = "gdb",
-      miDebuggerServerAddress = remote_ip .. ":10000",
-      miDebuggerPath = gdb_path,
-      cwd = "${workspaceFolder}",
-      program = program_path,
-      setupCommands = {
-        {
-          text = "-enable-pretty-printing",
-          ignoreFailures = false,
-        },
-      },
-    },
+if remote_host and gdb_path and deploy_base and remote_bin then
+  local program_path = string.format("%s/usr/bin/%s", deploy_base, remote_bin)
+
+  dap.adapters.gdb = {
+    type = "executable",
+    command = gdb_path,
+    args = { "-i", "dap" },
   }
+
+  -- Crear una configuración independiente
+  local remote_config = {
+    name = "RemoteLaunch",
+    type = "gdb",
+    request = "launch",
+    program = "gdbserver",
+    cwd = "${workspaceFolder}",
+    stopOnEntry = true,
+    target = remote_host,
+    port = gdb_port,
+    remote = true,
+    gdbpath = "/usr/bin/",
+    sshPort = tonumber(ssh_port),
+    env = {
+      REMOTE_TARGET = "1",
+    },
+    is_remote_config = true,
+  }
+
+  -- Asignar la configuración a C++
+  dap.configurations.cpp = dap.configurations.cpp or {}
+  table.insert(dap.configurations.cpp, remote_config)
+
+  print("Configuración remota cargada:", vim.inspect(remote_config))
+
+  -- Mapeo específico para depuración remota
+  vim.keymap.set("n", "<leader>dr", function()
+    print("Ejecutando configuración remota...")
+    dap.run(remote_config)
+  end, { desc = "Debug Remote" })
+
+  -- Listener usando la configuración directa
+  dap.listeners.before.launch["gdbserver-start"] = function(config)
+    print("Listener before.launch activado")
+    print("Configuración recibida:", vim.inspect(config))
+
+    if config and config.is_remote_config then
+      local ssh_cmd = {
+        "ssh",
+        "-p",
+        ssh_port,
+        "root@" .. remote_host,
+        "gdbserver",
+        ":" .. gdb_port,
+        program_path,
+      }
+
+      vim.notify("🚀 Iniciando gdbserver remoto...", vim.log.levels.INFO)
+      print("Comando SSH: " .. table.concat(ssh_cmd, " "))
+
+      vim.fn.jobstart(ssh_cmd, {
+        detach = true,
+        on_exit = function(_, code)
+          if code ~= 0 then
+            vim.notify("❌ gdbserver falló (código " .. code .. ")", vim.log.levels.ERROR)
+          end
+        end,
+      })
+    else
+      print("Configuración no válida para listener remoto")
+    end
+  end
 end
 
+-- local remote_ip = os.getenv("REMOTE_HOST")
+-- local gdb_path = os.getenv("REMOTE_DEBUG_GDB_PATH")
+-- local program_path = os.getenv("PROGRAM_PATH")
+--
+-- if remote_ip and gdb_path then
+--   dap.configurations.cpp = {
+--     {
+--       name = "Remote GDB",
+--       type = "cppdbg",
+--       request = "launch",
+--       MIMode = "gdb",
+--       miDebuggerServerAddress = remote_ip .. ":10000",
+--       miDebuggerPath = gdb_path,
+--       cwd = "${workspaceFolder}",
+--       program = program_path,
+--       setupCommands = {
+--         {
+--           text = "-enable-pretty-printing",
+--           ignoreFailures = false,
+--         },
+--       },
+--     },
+--   }
+-- end
+--
 require("cmake-tools").setup({
   cmake_build_args = { "-j", tostring(vim.loop.cpu_info() and #vim.loop.cpu_info() or 4) },
 })
@@ -220,3 +300,21 @@ vim.keymap.set("n", "<leader>dh", function()
     vim.notify("No hay logs disponibles", vim.log.levels.WARN)
   end
 end, { desc = "Hide debug logs" })
+
+-- Depuración de listeners DAP
+print("\n=== LISTENERS DAP REGISTRADOS ===")
+for event, listeners in pairs(dap.listeners) do
+  print("Evento:", event)
+  for name, _ in pairs(listeners) do
+    print("  Listener:", name)
+  end
+end
+
+-- Depuración de configuraciones
+print("\n=== CONFIGURACIONES DAP ===")
+for lang, configs in pairs(dap.configurations) do
+  print("Lenguaje:", lang)
+  for i, config in ipairs(configs) do
+    print("  Configuración", i, ":", config.name or "sin nombre")
+  end
+end
