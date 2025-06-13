@@ -1,5 +1,3 @@
--- ~/.config/nvim/lua/plugins/dap-custom.lua
-
 return {
   "mfussenegger/nvim-dap",
   dependencies = { "rcarriga/nvim-dap-ui", "nvim-neotest/nvim-nio" },
@@ -7,118 +5,250 @@ return {
   config = function()
     local dap = require("dap")
 
-    vim.api.nvim_set_hl(0, "DapBreakpointColor", { fg = "#ff00ef" }) -- Un azul claro
+    -- ===================================================================
+    -- PERSONALIZACIÓN DE ICONOS
+    -- ===================================================================
+    vim.api.nvim_set_hl(0, "DapBreakpointColor", { fg = "#ff00ef" })
+    vim.fn.sign_define("DapBreakpoint", { text = "●", texthl = "DapBreakpointColor", numhl = "DapBreakpointColor" })
+    vim.fn.sign_define(
+      "DapBreakpointCondition",
+      { text = "●", texthl = "DapBreakpointColor", numhl = "DapBreakpointColor" }
+    )
+    vim.api.nvim_set_hl(0, "DapStoppedColor", { fg = "#98c379" })
+    vim.fn.sign_define(
+      "DapStopped",
+      { text = "➜", texthl = "DapStoppedColor", linehl = "DapStoppedLine", numhl = "DapStoppedColor" }
+    )
 
-    -- 2. Usamos vim.fn.sign_define() para cambiar los símbolos
-    vim.fn.sign_define("DapBreakpoint", {
-      text = "●", -- El símbolo del punto
-      texthl = "DapBreakpointColor", -- El grupo de color que acabamos de definir
-      linehl = "",
-      numhl = "DapBreakpointColor", -- El número de línea también tendrá el color
-    })
-    vim.fn.sign_define("DapBreakpointCondition", {
-      text = "●", -- También para breakpoints condicionales
-      texthl = "DapBreakpointColor",
-      linehl = "",
-      numhl = "DapBreakpointColor",
-    })
+    -- ===================================================================
+    -- FUNCIÓN AUXILIAR SSH
+    -- ===================================================================
+    local function build_ssh_command(cmd)
+      local host = os.getenv("REMOTE_HOST")
+      if not host then
+        vim.notify("❌ Variable REMOTE_HOST no definida", vim.log.levels.ERROR)
+        return nil
+      end
 
-    -- Opcional: Icono para la línea de ejecución parada
-    vim.api.nvim_set_hl(0, "DapStoppedColor", { fg = "#98c379" }) -- Un verde
-    vim.fn.sign_define("DapStopped", {
-      text = "➜",
-      texthl = "DapStoppedColor",
-      linehl = "DapStoppedLine",
-      numhl = "DapStoppedColor",
-    })
-
-    -- 1. CONFIGURACIÓN DE LA SESIÓN REMOTA
-    -- ... (esta parte no cambia) ...
-    local remote_host = os.getenv("REMOTE_HOST")
-    local gdb_path = os.getenv("REMOTE_DEBUG_GDB_PATH")
-    local deploy_base = os.getenv("DEPLOY_REMOTE_BASE_PATH")
-    local remote_bin = os.getenv("REMOTE_BINARY_NAME")
-
-    if remote_host and gdb_path and deploy_base and remote_bin then
-      local program_path = string.format("%s/usr/bin/%s", deploy_base, remote_bin)
-      local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or "10000"
-      local remote_config = {
-        name = "REMOTE DEBUG",
-        type = "cppdbg",
-        request = "launch",
-        program = program_path,
-        MIMode = "gdb",
-        miDebuggerPath = gdb_path,
-        miDebuggerServerAddress = remote_host .. ":" .. gdb_port,
-        cwd = "${workspaceFolder}",
-        stopOnEntry = true,
-      }
-      dap.configurations.c = { remote_config }
-      dap.configurations.cpp = { remote_config }
+      return string.format(
+        "sshpass -e ssh -p %s -o StrictHostKeyChecking=no root@%s '%s'",
+        os.getenv("REMOTE_SSH_PORT") or "2222",
+        host,
+        cmd
+      )
     end
 
     -- ===================================================================
-    -- MAPEADOS DE TECLADO CON LÓGICA DE ARGUMENTOS
+    -- CONFIGURACIÓN DE LA SESIÓN REMOTA
+    -- ===================================================================
+    if os.getenv("REMOTE_HOST") then
+      local local_program_path = os.getenv("LOCAL_PROGRAM_PATH")
+      if local_program_path then
+        local remote_config = {
+          log = true,
+          logToFile = false,
+          name = "REMOTE DEBUG",
+          type = "cppdbg",
+          request = "launch",
+          program = local_program_path,
+          MIMode = "gdb",
+          miDebuggerPath = os.getenv("REMOTE_DEBUG_GDB_PATH"),
+          miDebuggerServerAddress = string.format(
+            "%s:%s",
+            os.getenv("REMOTE_HOST"),
+            os.getenv("REMOTE_GDBSERVER_PORT") or "10000"
+          ),
+          cwd = "${workspaceFolder}",
+          stopOnEntry = true,
+          setupCommands = {
+            {
+              text = "-enable-pretty-printing",
+              description = "Habilitar impresión mejorada",
+              ignoreFailures = false,
+            },
+          },
+        }
+        dap.configurations.c = dap.configurations.c or {}
+        dap.configurations.cpp = dap.configurations.cpp or {}
+        table.insert(dap.configurations.c, remote_config)
+        table.insert(dap.configurations.cpp, remote_config)
+      end
+    end
+
+    -- ===================================================================
+    -- LISTENER PARA CAPTURAR SALIDA DEL SERVIDOR GDB
+    -- ===================================================================
+    dap.listeners.after["event_output"]["dapui_gdb"] = function(_, body)
+      -- Capturar logs de GDB Server
+      if body.category == "stderr" or body.category == "log" or body.category == "output" then
+        -- Enviar a la consola de dap-ui
+        require("dap.repl").append(body.output)
+      end
+    end
+
+    -- ===================================================================
+    -- LÓGICA DE LANZAMIENTO REMOTO
     -- ===================================================================
     vim.keymap.set("n", "<leader>dR", function()
       local remote_configs = dap.configurations.cpp
-      if not (remote_configs and remote_configs[1]) then
-        vim.notify("❌ No se encontró la configuración remota de DAP.", vim.log.levels.ERROR)
-        return
+      if not (remote_configs and #remote_configs > 0) then
+        return vim.notify("❌ No se encontraron configuraciones DAP", vim.log.levels.ERROR)
       end
 
-      -- PASO 1: Pedir al usuario los argumentos de ejecución
-      vim.ui.input({ prompt = "Argumentos de ejecución:" }, function(input_args)
-        -- Si el usuario pulsa <esc>, input_args será nil.
-        if not input_args then
-          vim.notify("❌ Depuración cancelada.", vim.log.levels.WARN)
-          return
+      local env_checks = {
+        "SSHPASS",
+        "REMOTE_HOST",
+        "REMOTE_PROGRAM_PATH",
+        "LOCAL_PROGRAM_PATH",
+      }
+
+      for _, var in ipairs(env_checks) do
+        if not os.getenv(var) then
+          return vim.notify("❌ Variable de entorno no definida: " .. var, vim.log.levels.ERROR)
+        end
+      end
+
+      vim.ui.input({ prompt = "Argumentos de ejecución:", default = "" }, function(input_args)
+        if input_args == nil then
+          return vim.notify("❌ Depuración cancelada", vim.log.levels.WARN)
         end
 
-        -- PASO 2: Convertir el string de argumentos en una tabla
-        -- vim.split divide el string por los espacios.
-        local args_table = vim.split(input_args, " ", { trimempty = true })
+        local args_table = {}
+        if input_args ~= "" then
+          args_table = vim.split(input_args, "%s+", { trimempty = true })
+        end
 
-        -- PASO 3: Clonar la configuración y añadirle los nuevos argumentos
-        local launch_config = vim.deepcopy(remote_configs[1])
-        launch_config.args = args_table
+        -- Buscar configuración remota específica
+        local target_config
+        for _, config in ipairs(remote_configs) do
+          if config.name == "REMOTE DEBUG" then
+            target_config = vim.deepcopy(config)
+            break
+          end
+        end
 
-        -- PASO 4: Lanzar gdbserver en el servidor remoto
-        vim.notify("🚀 Lanzando gdbserver remoto...", vim.log.levels.INFO)
-        local ssh_port = os.getenv("REMOTE_SSH_PORT") or "2222"
+        if not target_config then
+          target_config = vim.deepcopy(remote_configs[1])
+        end
+
+        target_config.args = args_table
+
+        -- Comando para iniciar gdbserver remoto
         local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or "10000"
-        local program_path =
-          string.format("%s/usr/bin/%s", os.getenv("DEPLOY_REMOTE_BASE_PATH"), os.getenv("REMOTE_BINARY_NAME"))
-
-        -- ¡Importante! Añadimos los argumentos al comando de gdbserver también.
-        local remote_command = string.format(
+        local remote_cmd = string.format(
           "nohup gdbserver :%s %s %s > /tmp/gdbserver.log 2>&1 &",
           gdb_port,
-          program_path,
-          table.concat(args_table, " ") -- Unimos la tabla de argumentos en un string
+          os.getenv("REMOTE_PROGRAM_PATH"),
+          table.concat(args_table, " ")
         )
 
-        local ssh_cmd_args = { --
-          "sshpass",
-          "-e",
-          "ssh",
-          "-p",
-          ssh_port,
-          "-o",
-          "StrictHostKeyChecking=no", -- Opción para evitar prompts adicionales
-          "root@" .. (os.getenv("REMOTE_HOST")),
-          remote_command,
-        }
-        vim.fn.jobstart(ssh_cmd_args, { detach = true })
+        local ssh_cmd = build_ssh_command(remote_cmd)
+        if not ssh_cmd then
+          return vim.notify("❌ Error construyendo comando SSH", vim.log.levels.ERROR)
+        end
 
-        -- PASO 5: Pausa y conexión del depurador
-        vim.notify("⏳ Esperando 2 segundos...", vim.log.levels.WARN)
+        vim.notify("🚀 Iniciando gdbserver remoto...", vim.log.levels.INFO)
+        vim.fn.jobstart(ssh_cmd, {
+          detach = true,
+          on_exit = function(_, code)
+            if code ~= 0 then
+              vim.notify("❌ Fallo al iniciar gdbserver: código " .. code, vim.log.levels.ERROR)
+            end
+          end,
+        })
+
+        local wait_time = tonumber(os.getenv("DEBUG_WAIT_TIME")) or 2000
+        vim.notify("⏳ Esperando " .. (wait_time / 1000) .. " segundos...", vim.log.levels.WARN)
         vim.defer_fn(function()
-          vim.notify("🛰️ Conectando el depurador local.", vim.log.levels.INFO)
-          dap.run(launch_config) -- Usamos la configuración con los nuevos argumentos
-        end, 500)
+          vim.notify("🛰️ Conectando depurador...", vim.log.levels.INFO)
+          dap.run(target_config)
+        end, wait_time)
       end)
     end, { desc = "Debug Remote (con Argumentos)" })
-    -- ... (otros mapeos estándar) ...
+
+    -- ===================================================================
+    -- COMANDOS ADICIONALES
+    -- ===================================================================
+    -- Extrae la lógica a una función
+    local function show_gdbserver_log()
+      local dapui = require("dapui")
+      local dap_repl = require("dap.repl")
+
+      -- 1) Asegúrate de que el panel "Console" (REPL) esté abierto
+      dapui.open("repl")
+
+      -- 2) Construye el comando SSH como antes
+      local ssh_cmd = build_ssh_command("tail -f /tmp/gdbserver.log")
+      if not ssh_cmd then
+        return vim.notify("❌ Error construyendo comando SSH", vim.log.levels.ERROR)
+      end
+
+      -- 3) Arranca el job sin buffer y engancha los callbacks
+      vim.fn.jobstart(ssh_cmd, {
+        stdout_buffered = false,
+        on_stdout = function(_, data)
+          for _, line in ipairs(data) do
+            if line ~= "" then
+              dap_repl.append(line)
+
+              for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_option(buf, "filetype") == "dap-repl" then
+                  vim.api.nvim_buf_call(buf, function()
+                    vim.cmd("normal! G")
+                  end)
+                  break
+                end
+              end
+            end
+          end
+        end,
+        on_stderr = function(_, data)
+          for _, line in ipairs(data) do
+            if line ~= "" then
+              dap_repl.append(line)
+              for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_option(buf, "filetype") == "dap-repl" then
+                  vim.api.nvim_buf_call(buf, function()
+                    vim.cmd("normal! G")
+                  end)
+                  break
+                end
+              end
+            end
+          end
+        end,
+        on_exit = function(_, code)
+          dap_repl.append("<<< gdbserver log job exited with code: " .. code .. " >>>")
+        end,
+      })
+    end
+
+    -- Comando manual (opcional, puedes dejarlo si quieres)
+    vim.api.nvim_create_user_command(
+      "DapGdbServerLog",
+      show_gdbserver_log,
+      { desc = "Mostrar logs de gdbserver remoto en dap-ui Console" }
+    )
+
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "DapUIOpen",
+      callback = function()
+        show_gdbserver_log()
+      end,
+    })
+
+    vim.api.nvim_create_autocmd("FileType", {
+      pattern = "dap-repl",
+      callback = function()
+        vim.defer_fn(function()
+          show_gdbserver_log()
+        end, 100)
+      end,
+    })
+
+    -- ===================================================================
+    -- HABILITAR LOGS DETALLADOS PARA DEPURACIÓN
+    -- ===================================================================
+    dap.set_log_level("TRACE")
   end,
 }

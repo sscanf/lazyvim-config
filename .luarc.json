@@ -1,5 +1,8 @@
 {
     "diagnostics.globals": [
         "export"
+    ],
+    "diagnostics.disable": [
+        "param-type-mismatch"
     ]
 }
