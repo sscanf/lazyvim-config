@@ -1,5 +1,6 @@
 return {
   "rcarriga/nvim-dap-ui",
+  lazy = false,
   dependencies = { "nvim-neotest/nvim-nio" },
   opts = {
     auto_open = true,
@@ -49,13 +50,14 @@ return {
   },
 
   config = function(_, opts)
+    print("--- [DEBUG] CONFIGURACIÓN DE DAP-UI SE ESTÁ EJECUTANDO ---")
     local dap = require("dap")
     local dapui = require("dapui")
     dapui.setup(opts)
 
     -- Listeners para abrir/cerrar automáticamente
     dap.listeners.after.event_initialized["dapui_config"] = function()
-      dapui.open({ reset = true })
+      dapui.open()
     end
     dap.listeners.before.event_terminated["dapui_config"] = function()
       dapui.close({})

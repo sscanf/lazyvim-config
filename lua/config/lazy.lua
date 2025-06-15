@@ -120,35 +120,6 @@ vim.api.nvim_create_autocmd("VimEnter", {
   callback = load_project_dap_config,
 })
 
--- ===================================================================
--- CONFIGURACIÓN DE DEPURACIÓN REMOTA CON CPPDBG
--- ===================================================================
-
--- local remote_ip = os.getenv("REMOTE_HOST")
--- local gdb_path = os.getenv("REMOTE_DEBUG_GDB_PATH")
--- local program_path = os.getenv("PROGRAM_PATH")
---
--- if remote_ip and gdb_path then
---   dap.configurations.cpp = {
---     {
---       name = "Remote GDB",
---       type = "cppdbg",
---       request = "launch",
---       MIMode = "gdb",
---       miDebuggerServerAddress = remote_ip .. ":10000",
---       miDebuggerPath = gdb_path,
---       cwd = "${workspaceFolder}",
---       program = program_path,
---       setupCommands = {
---         {
---           text = "-enable-pretty-printing",
---           ignoreFailures = false,
---         },
---       },
---     },
---   }
--- end
---
 require("cmake-tools").setup({
   cmake_build_args = { "-j", tostring(vim.loop.cpu_info() and #vim.loop.cpu_info() or 4) },
 })

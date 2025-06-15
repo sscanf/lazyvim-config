@@ -18,15 +18,15 @@ return {
     vim.fn.sign_define(
       "DapStopped",
       { text = "➜", texthl = "DapStoppedColor", linehl = "DapStoppedLine", numhl = "DapStoppedColor" }
-    )
 
+    )
     -- ===================================================================
     -- FUNCIÓN AUXILIAR SSH
     -- ===================================================================
     local function build_ssh_command(cmd)
-      local host = os.getenv("REMOTE_HOST")
+      local host = os.getenv("REMOTE_SSH_HOST")
       if not host then
-        vim.notify("❌ Variable REMOTE_HOST no definida", vim.log.levels.ERROR)
+        vim.notify("❌ Variable REMOTE_SSH_HOST no definida", vim.log.levels.ERROR)
         return nil
       end
 
@@ -41,7 +41,7 @@ return {
     -- ===================================================================
     -- CONFIGURACIÓN DE LA SESIÓN REMOTA
     -- ===================================================================
-    if os.getenv("REMOTE_HOST") then
+    if os.getenv("REMOTE_SSH_HOST") then
       local local_program_path = os.getenv("LOCAL_PROGRAM_PATH")
       if local_program_path then
         local remote_config = {
@@ -52,10 +52,10 @@ return {
           request = "launch",
           program = local_program_path,
           MIMode = "gdb",
-          miDebuggerPath = os.getenv("REMOTE_DEBUG_GDB_PATH"),
+          miDebuggerPath = os.getenv("LOCAL_GDB_PATH"),
           miDebuggerServerAddress = string.format(
             "%s:%s",
-            os.getenv("REMOTE_HOST"),
+            os.getenv("REMOTE_SSH_HOST"),
             os.getenv("REMOTE_GDBSERVER_PORT") or "10000"
           ),
           cwd = "${workspaceFolder}",
@@ -91,13 +91,14 @@ return {
     -- ===================================================================
     vim.keymap.set("n", "<leader>dR", function()
       local remote_configs = dap.configurations.cpp
+
       if not (remote_configs and #remote_configs > 0) then
         return vim.notify("❌ No se encontraron configuraciones DAP", vim.log.levels.ERROR)
       end
 
       local env_checks = {
         "SSHPASS",
-        "REMOTE_HOST",
+        "REMOTE_SSH_HOST",
         "REMOTE_PROGRAM_PATH",
         "LOCAL_PROGRAM_PATH",
       }
@@ -157,9 +158,10 @@ return {
           end,
         })
 
-        local wait_time = tonumber(os.getenv("DEBUG_WAIT_TIME")) or 2000
+        local wait_time = tonumber(os.getenv("DEBUG_WAIT_TIME")) or 500
         vim.notify("⏳ Esperando " .. (wait_time / 1000) .. " segundos...", vim.log.levels.WARN)
         vim.defer_fn(function()
+          vim.notify("🛰️ Target_config " .. vim.inspect(target_config), vim.log.levels.INFO)
           vim.notify("🛰️ Conectando depurador...", vim.log.levels.INFO)
           dap.run(target_config)
         end, wait_time)
@@ -174,10 +176,8 @@ return {
       local dapui = require("dapui")
       local dap_repl = require("dap.repl")
 
-      -- 1) Asegúrate de que el panel "Console" (REPL) esté abierto
       dapui.open("repl")
 
-      -- 2) Construye el comando SSH como antes
       local ssh_cmd = build_ssh_command("tail -f /tmp/gdbserver.log")
       if not ssh_cmd then
         return vim.notify("❌ Error construyendo comando SSH", vim.log.levels.ERROR)
@@ -192,7 +192,7 @@ return {
               dap_repl.append(line)
 
               for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_option(buf, "filetype") == "dap-repl" then
+                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_get_option_value("filetype", { buf = buf }) == "dap-repl" then
                   vim.api.nvim_buf_call(buf, function()
                     vim.cmd("normal! G")
                   end)
@@ -207,7 +207,7 @@ return {
             if line ~= "" then
               dap_repl.append(line)
               for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_option(buf, "filetype") == "dap-repl" then
+                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_get_option_value("filetype", { buf = buf }) == "dap-repl" then
                   vim.api.nvim_buf_call(buf, function()
                     vim.cmd("normal! G")
                   end)
@@ -223,7 +223,6 @@ return {
       })
     end
 
-    -- Comando manual (opcional, puedes dejarlo si quieres)
     vim.api.nvim_create_user_command(
       "DapGdbServerLog",
       show_gdbserver_log,
@@ -237,15 +236,36 @@ return {
       end,
     })
 
-    vim.api.nvim_create_autocmd("FileType", {
-      pattern = "dap-repl",
+    vim.keymap.set("n", "<leader>du", function()
+      local dapui = require("dapui")
+      -- Cierra Neo-tree si está abierta
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        local buf = vim.api.nvim_win_get_buf(win)
+        local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
+        if ft == "neo-tree" then
+          vim.api.nvim_win_close(win, true)
+        end
+      end
+      -- Toggle DAP UI
+      dapui.toggle()
+    end)
+
+    local dapui = require("dapui")
+    dapui.setup()
+
+    local neotree_augroup = "NeoTreeEvent_vim_buffer_deleted" -- Ajusta si tu grupo es diferente
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "DapUIOpen",
       callback = function()
-        vim.defer_fn(function()
-          show_gdbserver_log()
-        end, 100)
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+          local buf = vim.api.nvim_win_get_buf(win)
+          local ft = vim.api.nvim_get_option_value("filetype", { buf = buf })
+          if ft == "neo-tree" then
+            vim.api.nvim_win_close(win, true)
+          end
+        end
       end,
     })
-
     -- ===================================================================
     -- HABILITAR LOGS DETALLADOS PARA DEPURACIÓN
     -- ===================================================================
