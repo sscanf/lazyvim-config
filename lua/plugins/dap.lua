@@ -6,7 +6,7 @@ return {
   { import = "lazyvim.plugins.extras.lang.python" },
   --
   -- disable venv because it's I'm handling this outside of nvim
-  { "linux-cultist/venv-selector.nvim", enabled = false },
+  { "linux-cultist/venv-selector.nvim",           enabled = false },
 
   --  disable automatic dap installation because it screws up my venv setup
   -- { "jay-babu/mason-nvim-dap.nvim", enabled = true},
@@ -23,4 +23,3 @@ return {
     },
   },
 }
-

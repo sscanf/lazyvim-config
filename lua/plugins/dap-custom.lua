@@ -18,7 +18,6 @@ return {
     vim.fn.sign_define(
       "DapStopped",
       { text = "➜", texthl = "DapStoppedColor", linehl = "DapStoppedLine", numhl = "DapStoppedColor" }
-
     )
     -- ===================================================================
     -- FUNCIÓN AUXILIAR SSH
@@ -174,51 +173,91 @@ return {
     -- Extrae la lógica a una función
     local function show_gdbserver_log()
       local dapui = require("dapui")
-      local dap_repl = require("dap.repl")
-
-      dapui.open("repl")
-
       local ssh_cmd = build_ssh_command("tail -f /tmp/gdbserver.log")
       if not ssh_cmd then
         return vim.notify("❌ Error construyendo comando SSH", vim.log.levels.ERROR)
       end
 
-      -- 3) Arranca el job sin buffer y engancha los callbacks
+      local function append_to_repl(line)
+        require("dap.repl").append(line)
+      end
+
+      dapui.open("repl")
+
+      print("[DEBUG] job lanzado")
+      vim.fn.jobstart(ssh_cmd, {
+        stdout_buffered = false,
+        on_stdout = function(_, data)
+          for _, line in ipairs(data) do
+            print("[DEBUG] línea: " .. line)
+            if line ~= "" then
+              append_to_repl(line)
+            end
+          end
+        end,
+        on_stderr = function(_, data)
+          for _, line in ipairs(data) do
+            print("[DEBUG] línea: " .. line)
+            if line ~= "" then
+              append_to_repl(line)
+            end
+          end
+        end,
+        on_exit = function(_, code)
+          append_to_repl("<<< gdbserver log job exited with code: " .. code .. " >>>")
+        end,
+      })
+    end
+
+    vim.api.nvim_create_user_command(
+      "DapGdbServerLog",
+      show_gdbserver_log,
+      { desc = "Mostrar logs de gdbserver remoto en dap-ui Console" }
+    )
+
+
+    -- Lanza el job automáticamente al inicializar la sesión DAP
+    local dapui = require("dapui")
+
+    local function append_to_repl(line)
+      require("dap.repl").append(line)
+      -- Scroll automático al final del REPL (forzado con vim.schedule)
+      vim.schedule(function()
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+          local buf = vim.api.nvim_win_get_buf(win)
+          if vim.api.nvim_get_option_value("filetype", { buf = buf }) == "dap-repl" then
+            vim.api.nvim_win_set_cursor(win, { vim.api.nvim_buf_line_count(buf), 0 })
+          end
+        end
+      end)
+    end
+
+    dap.listeners.after.event_initialized["gdbserver_log_job"] = function()
+      local ssh_cmd = build_ssh_command("tail -f /tmp/gdbserver.log")
+      if not ssh_cmd then
+        return vim.notify("❌ Error construyendo comando SSH", vim.log.levels.ERROR)
+      end
+
+      dapui.open("repl")
+
       vim.fn.jobstart(ssh_cmd, {
         stdout_buffered = false,
         on_stdout = function(_, data)
           for _, line in ipairs(data) do
             if line ~= "" then
-              dap_repl.append(line)
-
-              for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_get_option_value("filetype", { buf = buf }) == "dap-repl" then
-                  vim.api.nvim_buf_call(buf, function()
-                    vim.cmd("normal! G")
-                  end)
-                  break
-                end
-              end
+              append_to_repl(line)
             end
           end
         end,
         on_stderr = function(_, data)
           for _, line in ipairs(data) do
             if line ~= "" then
-              dap_repl.append(line)
-              for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_get_option_value("filetype", { buf = buf }) == "dap-repl" then
-                  vim.api.nvim_buf_call(buf, function()
-                    vim.cmd("normal! G")
-                  end)
-                  break
-                end
-              end
+              append_to_repl(line)
             end
           end
         end,
         on_exit = function(_, code)
-          dap_repl.append("<<< gdbserver log job exited with code: " .. code .. " >>>")
+          append_to_repl("<<< gdbserver log job exited with code: " .. code .. " >>>")
         end,
       })
     end
@@ -270,5 +309,11 @@ return {
     -- HABILITAR LOGS DETALLADOS PARA DEPURACIÓN
     -- ===================================================================
     dap.set_log_level("TRACE")
+
+    dap.adapters.cppdbg = {
+      id = "cppdbg",
+      type = "executable",
+      command = "OpenDebugAD7",
+    }
   end,
 }

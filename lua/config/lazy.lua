@@ -83,7 +83,7 @@ local dap = require("dap")
 -- Configurar el adaptador para Python
 dap.adapters.python = {
   type = "executable",
-  command = "python",
+  command = "python3",
   args = { "-m", "debugpy.adapter" },
 }
 
