@@ -215,7 +215,6 @@ return {
       { desc = "Mostrar logs de gdbserver remoto en dap-ui Console" }
     )
 
-
     -- Lanza el job automáticamente al inicializar la sesión DAP
     local dapui = require("dapui")
 
@@ -305,15 +304,17 @@ return {
         end
       end,
     })
+
     -- ===================================================================
     -- HABILITAR LOGS DETALLADOS PARA DEPURACIÓN
     -- ===================================================================
-    dap.set_log_level("TRACE")
+    --    dap.set_log_level("TRACE")
 
+    local gdb = os.getenv("LOCAL_GDB_PATH")
     dap.adapters.cppdbg = {
       id = "cppdbg",
       type = "executable",
-      command = "OpenDebugAD7",
+      command = "/home/parallels/.vscode/extensions/ms-vscode.cpptools-1.24.5-linux-x64/debugAdapters/bin/OpenDebugAD7",
     }
   end,
 }
