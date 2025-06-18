@@ -88,7 +88,8 @@ return {
     -- ===================================================================
     -- LÓGICA DE LANZAMIENTO REMOTO
     -- ===================================================================
-    vim.keymap.set("n", "<leader>dR", function()
+    -- Define la función globalmente para poder llamarla desde dapui
+    function _G.dap_remote_debug()
       local remote_configs = dap.configurations.cpp
 
       if not (remote_configs and #remote_configs > 0) then
@@ -118,7 +119,6 @@ return {
           args_table = vim.split(input_args, "%s+", { trimempty = true })
         end
 
-        -- Buscar configuración remota específica
         local target_config
         for _, config in ipairs(remote_configs) do
           if config.name == "REMOTE DEBUG" then
@@ -133,7 +133,6 @@ return {
 
         target_config.args = args_table
 
-        -- Comando para iniciar gdbserver remoto
         local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or "10000"
         local remote_cmd = string.format(
           "nohup gdbserver :%s %s %s > /tmp/gdbserver.log 2>&1 &",
@@ -165,7 +164,10 @@ return {
           dap.run(target_config)
         end, wait_time)
       end)
-    end, { desc = "Debug Remote (con Argumentos)" })
+    end
+
+    -- Mapea <leader>dR a la función global
+    vim.keymap.set("n", "<leader>dR", _G.dap_remote_debug, { desc = "Debug Remote (con Argumentos)" })
 
     -- ===================================================================
     -- COMANDOS ADICIONALES
@@ -314,7 +316,7 @@ return {
     dap.adapters.cppdbg = {
       id = "cppdbg",
       type = "executable",
-      command = "/home/parallels/.vscode/extensions/ms-vscode.cpptools-1.24.5-linux-x64/debugAdapters/bin/OpenDebugAD7",
+      command = os.getenv("CPPDBG"),
     }
   end,
 }
