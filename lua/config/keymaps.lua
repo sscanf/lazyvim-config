@@ -9,6 +9,8 @@ vim.api.nvim_set_keymap("n", "<A-i>", ":lua require'dap'.step_into()<CR>", { nor
 vim.api.nvim_set_keymap("n", "<A-v>", ":lua require'dap'.step_over()<CR>", { noremap = true, silent = true })
 vim.api.nvim_set_keymap("n", "<A-t>", ':lua require("dap.repl").open()<CR>', { noremap = true, silent = true })
 
+vim.keymap.set("n", "<A-D>", ":CMakeDeploy<CR>", { noremap = true, silent = true })
+
 vim.api.nvim_set_keymap(
   "n",
   "<F4>",

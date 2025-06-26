@@ -79,6 +79,12 @@ require("lspconfig").ruff.setup({
 })
 
 local dap = require("dap")
+dap.listeners.before.attach["cmake_deploy"] = function(session, body)
+  -- Solo para debugging remoto (puedes ajustar la condición según tu configuración)
+  if body and body.name and body.name:lower():find("remote") then
+    vim.cmd("CMakeDeploy")
+  end
+end
 
 -- Configurar el adaptador para Python
 dap.adapters.python = {
@@ -114,6 +120,10 @@ local function load_project_dap_config()
     end
   end
 end
+
+vim.api.nvim_create_user_command("CMakeDeploy", function()
+  vim.cmd("CMakeBuild deploy")
+end, {})
 
 -- Llama a la función cuando abras un proyecto
 vim.api.nvim_create_autocmd("VimEnter", {

@@ -81,7 +81,8 @@ return {
       -- Capturar logs de GDB Server
       if body.category == "stderr" or body.category == "log" or body.category == "output" then
         -- Enviar a la consola de dap-ui
-        require("dap.repl").append(body.output)
+        --       require("dap.repl").append(body.output)
+        require("dapui").eval(body.output, { panel = "console" })
       end
     end
 
@@ -173,6 +174,9 @@ return {
     -- COMANDOS ADICIONALES
     -- ===================================================================
     -- Extrae la lógica a una función
+    -- Usa una variable para guardar el job_id del tail remoto
+    local tail_job_id = nil
+
     local function show_gdbserver_log()
       local dapui = require("dapui")
       local ssh_cmd = build_ssh_command("tail -f /tmp/gdbserver.log")
@@ -187,7 +191,7 @@ return {
       dapui.open("repl")
 
       print("[DEBUG] job lanzado")
-      vim.fn.jobstart(ssh_cmd, {
+      tail_job_id = vim.fn.jobstart(ssh_cmd, {
         stdout_buffered = false,
         on_stdout = function(_, data)
           for _, line in ipairs(data) do
@@ -270,14 +274,20 @@ return {
     )
 
     vim.api.nvim_create_autocmd("User", {
-      pattern = "DapUIOpen",
+      pattern = "DapUIClose",
       callback = function()
-        show_gdbserver_log()
+        -- Detener el tail remoto si está corriendo
+        if tail_job_id then
+          vim.fn.jobstop(tail_job_id)
+          tail_job_id = nil
+        end
+        -- También puedes matar el proceso remoto por si acaso
+        local kill_cmd = build_ssh_command("pkill -f 'tail -f /tmp/gdbserver.log'")
+        vim.fn.jobstart(kill_cmd, { detach = true })
       end,
     })
 
     vim.keymap.set("n", "<leader>du", function()
-      local dapui = require("dapui")
       -- Cierra Neo-tree si está abierta
       for _, win in ipairs(vim.api.nvim_list_wins()) do
         local buf = vim.api.nvim_win_get_buf(win)
@@ -290,7 +300,6 @@ return {
       dapui.toggle()
     end)
 
-    local dapui = require("dapui")
     dapui.setup()
 
     local neotree_augroup = "NeoTreeEvent_vim_buffer_deleted" -- Ajusta si tu grupo es diferente
