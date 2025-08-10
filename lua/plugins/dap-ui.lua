@@ -16,7 +16,7 @@ return {
       {
         elements = {
           { id = "repl", size = 0.5 },
-          { id = "console", size = 0.3 },
+          { id = "console", size = 0.2 }, -- Agrega este elemento
           { id = "breakpoints", size = 0.1 },
           { id = "stacks", size = 0.2 },
         },

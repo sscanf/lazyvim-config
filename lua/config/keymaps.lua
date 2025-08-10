@@ -3,7 +3,9 @@
 -- Add any additional keymaps here
 --
 --
-vim.api.nvim_set_keymap("n", "<A-b>", ":lua require'dap'.toggle_breakpoint()<CR>", { noremap = true, silent = true })
+
+vim.api.nvim_set_keymap("n", "<A-r>", ":CMakeDebug<CR>", { noremap = true, silent = true, desc = "Debug" })
+vim.api.nvim_set_keymap("n", "<A-k>", ":lua require'dap'.toggle_breakpoint()<CR>", { noremap = true, silent = true })
 vim.api.nvim_set_keymap("n", "<A-d>", ":lua require'dap'.continue()<CR>", { noremap = true, silent = true })
 vim.api.nvim_set_keymap("n", "<A-i>", ":lua require'dap'.step_into()<CR>", { noremap = true, silent = true })
 vim.api.nvim_set_keymap("n", "<A-v>", ":lua require'dap'.step_over()<CR>", { noremap = true, silent = true })
@@ -99,29 +101,6 @@ vim.keymap.set("n", "<F2>", function()
   require("telescope.builtin").lsp_definitions()
 end, { noremap = true, silent = true })
 vim.keymap.set("n", "<S-F2>", "<C-o>", { noremap = true, silent = true })
-
-vim.api.nvim_set_keymap("n", "<F5>", '<Cmd>lua require"dap".continue()<CR>', { noremap = true, silent = true })
-vim.api.nvim_set_keymap("n", "<F10>", '<Cmd>lua require"dap".step_over()<CR>', { noremap = true, silent = true })
-vim.api.nvim_set_keymap("n", "<F11>", '<Cmd>lua require"dap".step_into()<CR>', { noremap = true, silent = true })
-vim.api.nvim_set_keymap("n", "<F12>", '<Cmd>lua require"dap".step_out()<CR>', { noremap = true, silent = true })
-vim.api.nvim_set_keymap(
-  "n",
-  "<Leader>b",
-  '<Cmd>lua require"dap".toggle_breakpoint()<CR>',
-  { noremap = true, silent = true }
-)
-vim.api.nvim_set_keymap(
-  "n",
-  "<Leader>B",
-  '<Cmd>lua require"dap".set_breakpoint(vim.fn.input("Breakpoint condition: "))<CR>',
-  { noremap = true, silent = true }
-)
-vim.api.nvim_set_keymap(
-  "n",
-  "<Leader>lp",
-  '<Cmd>lua require"dap".set_breakpoint(nil, nil, vim.fn.input("Log point message: "))<CR>',
-  { noremap = true, silent = true }
-)
 
 vim.api.nvim_set_keymap("n", "<A-b>", ":b#<CR>", { noremap = true, silent = true, desc = "Switch to other buffer" })
 
