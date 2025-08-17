@@ -34,9 +34,24 @@ return {
     }
 
     -- ===== Helpers =====
-    local function shell_quote(s)
-      s = tostring(s)
-      return "'" .. s:gsub("'", [['"'"']]) .. "'"
+    local function find_latest_executable_in_build()
+      local build_dir = "out"
+      if vim.fn.isdirectory(build_dir) ~= 1 then
+        return nil
+      end
+      local files = vim.fn.systemlist("find " .. build_dir .. " -type f -perm -111")
+      local latest, latest_time
+      for _, f in ipairs(files) do
+        if vim.fn.filereadable(f) == 1 then
+          local abs_f = vim.fn.fnamemodify(f, ":p")
+          local stat = vim.loop.fs_stat(abs_f)
+          if stat and (not latest_time or stat.mtime.sec > latest_time) then
+            latest = abs_f
+            latest_time = stat.mtime.sec
+          end
+        end
+      end
+      return latest
     end
 
     local function path_basename(p)
@@ -120,7 +135,10 @@ return {
       if p and p ~= "" and vim.fn.filereadable(p) == 1 then
         return cb(p)
       end
-      vim.ui.input({ prompt = "Ruta del ejecutable:", default = default_path or "" }, function(answer)
+      -- Busca ejecutable sugerido en out/
+      local deduced = find_latest_executable_in_build()
+      local prompt_default = deduced or default_path or ""
+      vim.ui.input({ prompt = "Ruta del ejecutable:", default = prompt_default }, function(answer)
         if not answer or answer == "" then
           return vim.notify(
             "❌ No se proporcionó ejecutable y $" .. envvar .. " no está definida",
@@ -130,7 +148,6 @@ return {
         if vim.fn.filereadable(answer) ~= 1 then
           return vim.notify("❌ El ejecutable no existe/legible: " .. answer, vim.log.levels.ERROR)
         end
-        -- propaga al entorno para siguientes usos
         vim.fn.setenv(envvar, answer)
         cb(answer)
       end)
