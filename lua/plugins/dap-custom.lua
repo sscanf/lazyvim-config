@@ -3,7 +3,7 @@ return {
   dependencies = { "rcarriga/nvim-dap-ui", "nvim-neotest/nvim-nio" },
 
   config = function()
-    require("plugins.dap-local")
+--    require("plugins.dap-local")
     require("plugins.dap-remote")
 
     -- ===== ICONOS =====

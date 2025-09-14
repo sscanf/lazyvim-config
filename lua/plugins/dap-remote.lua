@@ -112,7 +112,7 @@ local function ensure_remote_base_config()
     request = "launch",
     program = os.getenv("LOCAL_PROGRAM_PATH") or "/bin/true", -- se sobreescribe en runtime
     MIMode = "gdb",
-    miDebuggerPath = os.getenv("GDB") or "/usr/bin/gdb",
+    miDebuggerPath = os.getenv("LOCAL_GDB_PATH") or "/usr/bin/gdb",
     miDebuggerServerAddress = (os.getenv("REMOTE_SSH_HOST")) .. ":" .. (os.getenv("REMOTE_GDBSERVER_PORT") or "10000"),
     cwd = "/",
     stopAtEntry = false,
@@ -237,6 +237,7 @@ function _G.dap_remote_debug()
       target.type = "cppdbg"
       target.request = "launch"
       target.MIMode = "gdb"
+      -- target.miDebuggerPath = os.getenv("GDB")
       target.miDebuggerPath = os.getenv("GDB")
       target.miDebuggerServerAddress = (os.getenv("REMOTE_SSH_HOST"))
         .. ":"
