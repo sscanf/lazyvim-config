@@ -1,8 +1,11 @@
 {
     "diagnostics.globals": [
-        "export"
+        "export",
+        "wait_ms"
     ],
     "diagnostics.disable": [
-        "param-type-mismatch"
+        "param-type-mismatch",
+        "missing-parameter",
+        "deprecated"
     ]
 }

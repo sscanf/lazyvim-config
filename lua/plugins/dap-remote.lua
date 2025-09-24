@@ -237,26 +237,39 @@ function _G.dap_remote_debug()
       target.type = "cppdbg"
       target.request = "launch"
       target.MIMode = "gdb"
-      -- target.miDebuggerPath = os.getenv("GDB")
       target.miDebuggerPath = os.getenv("GDB")
-      target.miDebuggerServerAddress = (os.getenv("REMOTE_SSH_HOST"))
-        .. ":"
-        .. (os.getenv("REMOTE_GDBSERVER_PORT") or "10000")
+      target.miDebuggerServerAddress = (os.getenv("REMOTE_SSH_HOST")) .. ":" .. gdb_port
 
-      target.console = "internalConsole"
+      -- 🔥 CAMBIOS IMPORTANTES: Configurar para capturar salida
+      target.console = "externalTerminal" -- o "integratedTerminal" si prefieres
+      target.externalConsole = true
       target.stopAtEntry = false
+
+      -- Configuración adicional para capturar salida
+      target.logging = {
+        engineLogging = true,
+        trace = true,
+      }
 
       local qargs = {}
       for _, a in ipairs(args) do
         table.insert(qargs, shell_quote(a))
       end
+
+      -- 🔥 MODIFICACIÓN: Redirigir salida a archivos temporales específicos
+      local output_base = "/tmp/" .. path_basename(rprog)
+      local stdout_file = output_base .. ".stdout"
+      local stderr_file = output_base .. ".stderr"
+
       local kill_pat = shell_quote("gdbserver :" .. gdb_port)
       local cmd = string.format(
-        "pkill -f %s || true; nohup gdbserver :%s %s %s > /tmp/gdbserver.log 2>&1 & disown",
+        "pkill -f %s || true; nohup gdbserver :%s %s %s > %s 2> %s & disown",
         kill_pat,
         gdb_port,
         shell_quote(rprog),
-        table.concat(qargs, " ")
+        table.concat(qargs, " "),
+        stdout_file,
+        stderr_file
       )
 
       local ssh_cmd = build_ssh_command(cmd)
@@ -276,8 +289,143 @@ function _G.dap_remote_debug()
 
       local wait_ms = tonumber(os.getenv("DEBUG_WAIT_TIME")) or 700
       vim.notify("⏳ Esperando " .. (wait_ms / 1000) .. " s para que gdbserver escuche...", vim.log.levels.WARN)
+
       vim.defer_fn(function()
         vim.notify("🛰️ Conectando depurador...", vim.log.levels.INFO)
+
+        -- 🔥 Configurar función para monitorear la salida
+        local function setup_output_monitoring()
+          -- 🔥 VARIABLE DE CONTROL
+          _G.dapui_monitoring_active = true
+
+          -- 🔥 FUNCIÓN MEJORADA PARA ENCONTRAR LA CONSOLA DAP-UI
+          local function find_dapui_console_buffer()
+            -- Intentar encontrar por filetype primero
+            for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+              if vim.api.nvim_buf_is_valid(buf) then
+                local ft = pcall(vim.api.nvim_buf_get_option, buf, "filetype")
+                if ft == "dap-repl" then
+                  print("ENcontrado!!!!!!")
+                  return buf
+                end
+              end
+            end
+
+            -- Buscar por nombre de buffer
+            for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+              local name = vim.api.nvim_buf_get_name(buf)
+              if name:match("dapui") and name:match("console") then
+                return buf
+              end
+            end
+
+            return nil
+          end
+
+          -- 🔥 FUNCIÓN PARA AÑADIR TEXTO A LA CONSOLA
+          local function append_to_console(message, is_error)
+            local console_buf = find_dapui_console_buffer()
+            if not console_buf or not vim.api.nvim_buf_is_valid(console_buf) then
+              return false
+            end
+
+            pcall(function()
+              local last_line = vim.api.nvim_buf_line_count(console_buf)
+              vim.api.nvim_buf_set_option(console_buf, "modifiable", true)
+
+              local timestamp = os.date("%H:%M:%S")
+              local prefix = is_error and "🚨 [REMOTO-ERR] " or "📤 [REMOTO-OUT] "
+              local formatted_msg = string.format("[%s] %s%s", timestamp, prefix, message)
+
+              vim.api.nvim_buf_set_lines(console_buf, last_line, last_line, false, { formatted_msg })
+              vim.api.nvim_buf_set_option(console_buf, "modifiable", false)
+
+              -- Auto-scroll si la ventana está visible
+              local wins = vim.fn.getbufinfo(console_buf)[1].windows or {}
+              for _, winid in ipairs(wins) do
+                if vim.api.nvim_win_is_valid(winid) then
+                  vim.api.nvim_win_set_cursor(winid, { last_line + 1, 0 })
+                end
+              end
+            end)
+
+            return true
+          end
+
+          -- 🔥 MONITOREO PRINCIPAL
+          local function monitor_output()
+            if not _G.dapui_monitoring_active then
+              return
+            end
+
+            -- Leer archivos remotos
+            local function read_remote_file(file)
+              local cmd = build_ssh_command("cat " .. shell_quote(file) .. " 2>/dev/null || echo ''")
+              local result = vim.fn.systemlist(cmd) or {}
+              return table.concat(result, "\n")
+            end
+
+            vim.schedule(function()
+              if not _G.dapui_monitoring_active then
+                return
+              end
+
+              local stdout_content = read_remote_file(stdout_file)
+              local stderr_content = read_remote_file(stderr_file)
+
+              -- Enviar a la consola
+              if stdout_content ~= "" then
+                for line in stdout_content:gmatch("[^\r\n]+") do
+                  if line ~= "" then
+                    append_to_console(line, false)
+                  end
+                end
+              end
+
+              if stderr_content ~= "" then
+                for line in stderr_content:gmatch("[^\r\n]+") do
+                  if line ~= "" then
+                    append_to_console(line, true)
+                  end
+                end
+              end
+            end)
+          end
+
+          -- 🔥 CONFIGURAR TIMER
+          if vim.loop and vim.loop.new_timer then
+            _G.dapui_monitor_timer = vim.loop.new_timer()
+            _G.dapui_monitor_timer:start(1500, 1500, function()
+              monitor_output()
+            end)
+          end
+
+          -- 🔥 MENSAJE INICIAL
+          vim.defer_fn(function()
+            append_to_console("🎯 Monitoreo remoto iniciado", false)
+            append_to_console("📁 STDOUT: " .. stdout_file, false)
+            append_to_console("📁 STDERR: " .. stderr_file, false)
+          end, 1000)
+
+          -- 🔥 LIMPIAR AL TERMINAR
+          dap.listeners.before.event_terminated["dapui_monitor"] = function()
+            if _G.dapui_monitoring_active then
+              _G.dapui_monitoring_active = false
+              if _G.dapui_monitor_timer then
+                pcall(function()
+                  _G.dapui_monitor_timer:stop()
+                  _G.dapui_monitor_timer:close()
+                end)
+              end
+              append_to_console("🛑 Monitoreo remoto finalizado", false)
+            end
+          end
+        end
+
+        -- Iniciar monitoreo de salida
+        setup_output_monitoring()
+
+        -- Ejecutar la configuración DAP
         dap.run(target)
       end, wait_ms)
     end)
