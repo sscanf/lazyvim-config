@@ -28,8 +28,6 @@ end, { desc = "Selecciona todo el buffer sin mover el cursor" })
 vim.api.nvim_set_keymap("n", "<Tab>", ":bnext<CR>", { noremap = true, silent = true, desc = "Siguiente Buffer" })
 vim.api.nvim_set_keymap("n", "<S-Tab>", ":bprevious<CR>", { noremap = true, silent = true, desc = "Buffer Anterior" })
 
-vim.api.nvim_set_keymap("n", "<Esc>", "<leader>dh", { noremap = false, silent = true, desc = "Buffer Anterior" })
-
 vim.api.nvim_set_keymap("n", "<S-F5>", ":split | terminal<CR>", { noremap = true, silent = true })
 
 vim.api.nvim_set_keymap(
