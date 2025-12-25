@@ -109,6 +109,13 @@ return {
         -- ["*"] = function(server, opts) end,
       },
     },
+    cmd = {
+      "clangd",
+      "--log=verbose",
+      "--query-driver=/opt/poky/*/sysroots/x86_64-pokysdk-linux/usr/bin/*/*-gcc",
+      "--query-driver=/opt/poky/*/sysroots/x86_64-pokysdk-linux/usr/bin/*/*-g++",
+      "--compile-commands-dir=build",
+    },
   },
 
   -- for typescript, LazyVim also includes extra specs to properly setup lspconfig,

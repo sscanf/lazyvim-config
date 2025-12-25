@@ -241,7 +241,7 @@ function _G.dap_remote_debug()
       target.miDebuggerServerAddress = (os.getenv("REMOTE_SSH_HOST")) .. ":" .. gdb_port
 
       -- 🔥 CAMBIOS IMPORTANTES: Configurar para capturar salida
-      target.console = "externalTerminal" -- o "integratedTerminal" si prefieres
+      target.console = "integratedTerminal" -- o "integratedTerminal" si prefieres
       target.externalConsole = true
       target.stopAtEntry = false
 
