@@ -13,7 +13,8 @@ Features:
   - Keymap: <leader>dR to start remote debugging with arguments
 
 Output Capture:
-  - Uses 'script' command to capture all program output
+  - Simple bash redirection (>> file 2>&1) for maximum compatibility
+  - Uses stdbuf to disable buffering for instant output
   - Streams output in real-time with 'tail -f' (zero polling, zero delay)
   - One persistent SSH connection for streaming (very low resource usage)
   - Control with <leader>dC (cleanup) and <leader>dM (status)
@@ -22,7 +23,7 @@ Output Capture:
 Requirements:
   - sshpass for SSH authentication
   - CMake project with CMakeCache.txt
-  - script and tail commands on remote host (standard in all Linux distros)
+  - stdbuf and tail commands on remote host (standard in GNU coreutils)
   - Environment variables: REMOTE_SSH_HOST, SSHPASS, LOCAL_PROGRAM_PATH, etc.
 Plugin: mfussenegger/nvim-dap with cppdbg adapter
 ================================================================================
@@ -286,46 +287,38 @@ function _G.dap_remote_debug()
         table.insert(qargs, shell_quote(a))
       end
 
-      -- 🔥 STREAMING: Captura salida sin polling
+      -- 🔥 STREAMING: Captura salida con redirecciones simples (más confiable)
       local output_base = "/tmp/" .. path_basename(rprog)
       local output_file = output_base .. ".output"
-
-      -- Crear script temporal en el host remoto para evitar problemas de comillas
       local script_file = output_base .. ".sh"
       local kill_pat = shell_quote("gdbserver :" .. gdb_port)
 
-      -- Paso 1: Crear script en el host remoto
+      -- Crear script bash que ejecuta gdbserver con output sin buffer
       local gdb_command = string.format("gdbserver :%s %s %s", gdb_port, rprog, table.concat(args, " "))
       local create_script = string.format(
-        "cat > %s << 'EOFSCRIPT'\n#!/bin/bash\nexec %s\nEOFSCRIPT\nchmod +x %s",
+        "cat > %s << 'EOFSCRIPT'\n#!/bin/bash\n# Deshabilitar buffering para output inmediato\nstdbuf -oL -eL %s\nEOFSCRIPT\nchmod +x %s",
         shell_quote(script_file),
         gdb_command,
         shell_quote(script_file)
       )
 
-      -- Ejecutar creación del script
+      -- Crear el script
       local create_cmd = build_ssh_command(create_script)
-      vim.notify("📝 Creando script remoto: " .. script_file, vim.log.levels.INFO)
-      vim.notify("🔧 Comando gdbserver: " .. gdb_command, vim.log.levels.DEBUG)
+      vim.notify("📝 Preparando gdbserver remoto...", vim.log.levels.INFO)
 
       local create_result = vim.fn.system(create_cmd)
       if vim.v.shell_error ~= 0 then
-        vim.notify("❌ Error creando script: " .. create_result, vim.log.levels.ERROR)
+        vim.notify("❌ Error preparando script: " .. create_result, vim.log.levels.ERROR)
         return
       end
 
-      -- Verificar que el script se creó correctamente
-      local verify_cmd = build_ssh_command("cat " .. shell_quote(script_file))
-      local script_content = vim.fn.system(verify_cmd)
-      if vim.v.shell_error == 0 then
-        vim.notify("✅ Script creado exitosamente", vim.log.levels.INFO)
-        vim.notify("📄 Contenido:\n" .. script_content, vim.log.levels.DEBUG)
-      end
-
-      -- Paso 2: Ejecutar gdbserver usando script command
+      -- Comando final: ejecutar script con redirecciones simples
+      -- Usamos >> para append y redirigimos tanto stdout como stderr
       local cmd = string.format(
-        "pkill -f %s || true; nohup script -q -f -c %s %s </dev/null >/dev/null 2>&1 & disown",
+        "pkill -f %s || true; rm -f %s; touch %s; nohup %s >> %s 2>&1 & echo $!",
         kill_pat,
+        shell_quote(output_file),
+        shell_quote(output_file),
         shell_quote(script_file),
         shell_quote(output_file)
       )
@@ -335,19 +328,21 @@ function _G.dap_remote_debug()
         return vim.notify("❌ Error construyendo comando SSH", vim.log.levels.ERROR)
       end
 
-      vim.notify("🚀 Iniciando gdbserver remoto en " .. rprog .. "...", vim.log.levels.INFO)
-      vim.notify("📋 Script: " .. script_file, vim.log.levels.DEBUG)
-      vim.notify("📋 Output: " .. output_file, vim.log.levels.DEBUG)
-      vim.notify("📋 Comando: " .. cmd, vim.log.levels.DEBUG)
+      vim.notify("🚀 Iniciando gdbserver remoto...", vim.log.levels.INFO)
+      vim.notify("📋 Comando: " .. gdb_command, vim.log.levels.DEBUG)
 
-      vim.fn.jobstart(ssh_cmd, {
-        detach = true,
-        on_exit = function(_, code)
-          if code ~= 0 then
-            vim.notify("❌ Fallo al iniciar gdbserver: código " .. code, vim.log.levels.ERROR)
-          end
-        end,
-      })
+      -- Ejecutar y capturar el PID
+      local result = vim.fn.system(ssh_cmd)
+      local gdbserver_pid = vim.trim(result)
+
+      if vim.v.shell_error ~= 0 or gdbserver_pid == "" then
+        vim.notify("❌ Error al iniciar gdbserver", vim.log.levels.ERROR)
+        vim.notify("💡 Ejecuta :DapRemoteDiagnostic para más información", vim.log.levels.INFO)
+        return
+      end
+
+      vim.notify("✅ Gdbserver iniciado (PID: " .. gdbserver_pid .. ")", vim.log.levels.INFO)
+      vim.notify("📁 Output: " .. output_file, vim.log.levels.DEBUG)
 
       local wait_ms = tonumber(os.getenv("DEBUG_WAIT_TIME")) or 3000
       vim.notify("⏳ Esperando " .. (wait_ms / 1000) .. " s para que gdbserver escuche...", vim.log.levels.WARN)
@@ -454,7 +449,8 @@ function _G.dap_remote_debug()
                 -- Este callback se ejecuta AUTOMÁTICAMENTE cuando hay nuevas líneas
                 vim.schedule(function()
                   for _, line in ipairs(lines) do
-                    if line ~= "" and not line:match("^Script ") then  -- Filtrar mensajes de 'script'
+                    -- Filtrar líneas vacías y mensajes de control de gdbserver
+                    if line ~= "" and not line:match("^Remote debugging") and not line:match("^Process .* created") then
                       -- Detectar si es stderr (líneas con "error", "warning", etc.)
                       local is_error = line:match("[Ee]rror") or line:match("[Ww]arning") or line:match("FAIL")
                       append_to_console(line, is_error)
