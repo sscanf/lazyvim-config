@@ -373,17 +373,35 @@ function _G.dap_remote_debug()
             return true
           end
 
-          -- 🔥 MONITOREO PRINCIPAL
+          -- 🔥 MONITOREO PRINCIPAL (OPTIMIZADO)
+          local last_stdout_size = 0
+          local last_stderr_size = 0
+
           local function monitor_output()
-            if not _G.dapui_monitoring_active then
+            if not _G.dapui_monitoring_active or _G.dapui_monitoring_paused then
               return
             end
 
-            -- Leer archivos remotos
-            local function read_remote_file(file)
-              local cmd = build_ssh_command("cat " .. shell_quote(file) .. " 2>/dev/null || echo ''")
-              local result = vim.fn.systemlist(cmd) or {}
-              return table.concat(result, "\n")
+            -- Leer SOLO el tamaño de los archivos primero (más rápido)
+            local function get_file_size(file)
+              local cmd = build_ssh_command("stat -c%s " .. shell_quote(file) .. " 2>/dev/null || echo 0")
+              local result = vim.fn.system(cmd)
+              return tonumber(result) or 0
+            end
+
+            -- Solo leer contenido si el archivo creció
+            local function read_remote_file_tail(file, last_size)
+              if last_size == 0 then
+                -- Primera lectura: solo últimas 50 líneas
+                local cmd = build_ssh_command("tail -n 50 " .. shell_quote(file) .. " 2>/dev/null || echo ''")
+                local result = vim.fn.systemlist(cmd) or {}
+                return table.concat(result, "\n")
+              else
+                -- Leer solo nuevas líneas desde la última posición
+                local cmd = build_ssh_command("tail -c +" .. (last_size + 1) .. " " .. shell_quote(file) .. " 2>/dev/null || echo ''")
+                local result = vim.fn.systemlist(cmd) or {}
+                return table.concat(result, "\n")
+              end
             end
 
             vim.schedule(function()
@@ -391,34 +409,49 @@ function _G.dap_remote_debug()
                 return
               end
 
-              local stdout_content = read_remote_file(stdout_file)
-              local stderr_content = read_remote_file(stderr_file)
+              -- Verificar tamaños primero (más eficiente)
+              local stdout_size = get_file_size(stdout_file)
+              local stderr_size = get_file_size(stderr_file)
 
-              -- Enviar a la consola
-              if stdout_content ~= "" then
-                for line in stdout_content:gmatch("[^\r\n]+") do
-                  if line ~= "" then
-                    append_to_console(line, false)
+              -- Solo leer si hay contenido nuevo
+              if stdout_size > last_stdout_size then
+                local stdout_content = read_remote_file_tail(stdout_file, last_stdout_size)
+                if stdout_content ~= "" then
+                  for line in stdout_content:gmatch("[^\r\n]+") do
+                    if line ~= "" then
+                      append_to_console(line, false)
+                    end
                   end
                 end
+                last_stdout_size = stdout_size
               end
 
-              if stderr_content ~= "" then
-                for line in stderr_content:gmatch("[^\r\n]+") do
-                  if line ~= "" then
-                    append_to_console(line, true)
+              if stderr_size > last_stderr_size then
+                local stderr_content = read_remote_file_tail(stderr_file, last_stderr_size)
+                if stderr_content ~= "" then
+                  for line in stderr_content:gmatch("[^\r\n]+") do
+                    if line ~= "" then
+                      append_to_console(line, true)
+                    end
                   end
                 end
+                last_stderr_size = stderr_size
               end
             end)
           end
 
-          -- 🔥 CONFIGURAR TIMER
-          if vim.loop and vim.loop.new_timer then
+          -- 🔥 CONFIGURAR TIMER (configurable via variable de entorno)
+          local monitor_interval = tonumber(os.getenv("DAP_MONITOR_INTERVAL")) or 3000 -- 3 segundos por defecto
+          local monitor_enabled = os.getenv("DAP_MONITOR_ENABLED") ~= "false" -- Habilitado por defecto
+
+          if vim.loop and vim.loop.new_timer and monitor_enabled then
             _G.dapui_monitor_timer = vim.loop.new_timer()
-            _G.dapui_monitor_timer:start(1500, 1500, function()
+            _G.dapui_monitor_timer:start(monitor_interval, monitor_interval, function()
               monitor_output()
             end)
+            vim.notify("🔍 Monitoreo remoto: " .. monitor_interval .. "ms", vim.log.levels.INFO)
+          else
+            vim.notify("ℹ️  Monitoreo remoto deshabilitado", vim.log.levels.INFO)
           end
 
           -- 🔥 MENSAJE INICIAL
@@ -429,18 +462,24 @@ function _G.dap_remote_debug()
           end, 1000)
 
           -- 🔥 LIMPIAR AL TERMINAR
-          dap.listeners.before.event_terminated["dapui_monitor"] = function()
+          local function cleanup_monitor()
             if _G.dapui_monitoring_active then
               _G.dapui_monitoring_active = false
               if _G.dapui_monitor_timer then
                 pcall(function()
                   _G.dapui_monitor_timer:stop()
                   _G.dapui_monitor_timer:close()
+                  _G.dapui_monitor_timer = nil
                 end)
               end
               append_to_console("🛑 Monitoreo remoto finalizado", false)
             end
           end
+
+          -- Registrar limpieza en múltiples eventos
+          dap.listeners.before.event_terminated["dapui_monitor"] = cleanup_monitor
+          dap.listeners.before.event_exited["dapui_monitor"] = cleanup_monitor
+          dap.listeners.before.disconnect["dapui_monitor"] = cleanup_monitor
         end
 
         -- Iniciar monitoreo de salida
@@ -453,4 +492,60 @@ function _G.dap_remote_debug()
   end)
 end
 vim.keymap.set("n", "<leader>dR", _G.dap_remote_debug, { desc = "Debug Remote (con Argumentos)" })
+
+-- ========== COMANDOS DE CONTROL DEL MONITOREO ==========
+
+-- Limpiar/detener el timer de monitoreo
+vim.api.nvim_create_user_command("DapCleanupMonitor", function()
+  if _G.dapui_monitoring_active then
+    _G.dapui_monitoring_active = false
+    if _G.dapui_monitor_timer then
+      pcall(function()
+        _G.dapui_monitor_timer:stop()
+        _G.dapui_monitor_timer:close()
+        _G.dapui_monitor_timer = nil
+      end)
+    end
+    vim.notify("✅ Timer de monitoreo limpiado", vim.log.levels.INFO)
+  else
+    vim.notify("ℹ️  No hay timer activo", vim.log.levels.INFO)
+  end
+end, { desc = "Limpiar timer de monitoreo remoto" })
+
+-- Pausar el monitoreo temporalmente (sin destruir el timer)
+vim.api.nvim_create_user_command("DapPauseMonitor", function()
+  if _G.dapui_monitoring_active then
+    _G.dapui_monitoring_paused = true
+    vim.notify("⏸️  Monitoreo pausado", vim.log.levels.INFO)
+  else
+    vim.notify("ℹ️  No hay monitoreo activo", vim.log.levels.INFO)
+  end
+end, { desc = "Pausar monitoreo remoto" })
+
+-- Reanudar el monitoreo
+vim.api.nvim_create_user_command("DapResumeMonitor", function()
+  if _G.dapui_monitoring_active then
+    _G.dapui_monitoring_paused = false
+    vim.notify("▶️  Monitoreo reanudado", vim.log.levels.INFO)
+  else
+    vim.notify("ℹ️  No hay monitoreo activo", vim.log.levels.INFO)
+  end
+end, { desc = "Reanudar monitoreo remoto" })
+
+-- Mostrar estado del monitoreo
+vim.api.nvim_create_user_command("DapMonitorStatus", function()
+  if _G.dapui_monitoring_active then
+    local paused = _G.dapui_monitoring_paused and " (PAUSADO)" or " (ACTIVO)"
+    local timer_exists = _G.dapui_monitor_timer and "Sí" or "No"
+    vim.notify(string.format("Monitor: %s | Timer: %s", paused, timer_exists), vim.log.levels.INFO)
+  else
+    vim.notify("ℹ️  Monitoreo inactivo", vim.log.levels.INFO)
+  end
+end, { desc = "Estado del monitoreo remoto" })
+
+-- Keymaps rápidos
+vim.keymap.set("n", "<leader>dC", ":DapCleanupMonitor<CR>", { desc = "Cleanup Debug Monitor" })
+vim.keymap.set("n", "<leader>dP", ":DapPauseMonitor<CR>", { desc = "Pause Debug Monitor" })
+vim.keymap.set("n", "<leader>dM", ":DapMonitorStatus<CR>", { desc = "Monitor Status" })
+
 return {}

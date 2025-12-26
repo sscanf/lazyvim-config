@@ -112,12 +112,12 @@ return {
     }
   end,
   config = function()
-    -- Keymaps
-    vim.keymap.set("n", "<leader>nm", "<cmd>Neominimap toggle<cr>", { desc = "Toggle minimap" })
-    vim.keymap.set("n", "<leader>nmo", "<cmd>Neominimap on<cr>", { desc = "Open minimap" })
-    vim.keymap.set("n", "<leader>nmc", "<cmd>Neominimap off<cr>", { desc = "Close minimap" })
-    vim.keymap.set("n", "<leader>nmr", "<cmd>Neominimap refresh<cr>", { desc = "Refresh minimap" })
-    vim.keymap.set("n", "<leader>nmt", "<cmd>Neominimap toggleFocus<cr>", { desc = "Toggle minimap focus" })
+    -- Keymaps - usando <leader>m para evitar conflicto con notification history
+    vim.keymap.set("n", "<leader>mt", "<cmd>Neominimap toggle<cr>", { desc = "Toggle minimap" })
+    vim.keymap.set("n", "<leader>mo", "<cmd>Neominimap on<cr>", { desc = "Open minimap" })
+    vim.keymap.set("n", "<leader>mc", "<cmd>Neominimap off<cr>", { desc = "Close minimap" })
+    vim.keymap.set("n", "<leader>mr", "<cmd>Neominimap refresh<cr>", { desc = "Refresh minimap" })
+    vim.keymap.set("n", "<leader>mf", "<cmd>Neominimap toggleFocus<cr>", { desc = "Toggle minimap focus" })
 
     vim.notify("Neominimap configurado correctamente", vim.log.levels.INFO)
   end,
