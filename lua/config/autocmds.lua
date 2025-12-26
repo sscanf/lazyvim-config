@@ -15,24 +15,20 @@ Currently empty - add custom autocmds here as needed.
 -- Add any additional autocmds here
 
 -- Force DAP breakpoint signs to be red circles
-vim.api.nvim_create_autocmd({ "VimEnter", "ColorScheme" }, {
+vim.api.nvim_create_autocmd({ "VimEnter", "ColorScheme", "BufEnter" }, {
   callback = function()
     vim.schedule(function()
-      vim.api.nvim_set_hl(0, "DapBreakpointColor", { fg = "#e51400" })
-      vim.fn.sign_define("DapBreakpoint", { text = "🔴", texthl = "DapBreakpointColor", numhl = "DapBreakpointColor" })
-      vim.fn.sign_define(
-        "DapBreakpointCondition",
-        { text = "🔴", texthl = "DapBreakpointColor", numhl = "DapBreakpointColor" }
-      )
-      vim.fn.sign_define(
-        "DapBreakpointRejected",
-        { text = "🔴", texthl = "DapBreakpointColor", numhl = "DapBreakpointColor" }
-      )
-      vim.api.nvim_set_hl(0, "DapStoppedColor", { fg = "#98c379" })
-      vim.fn.sign_define(
-        "DapStopped",
-        { text = "➜", texthl = "DapStoppedColor", linehl = "DapStoppedLine", numhl = "DapStoppedColor" }
-      )
+      -- Definir highlight groups
+      vim.api.nvim_set_hl(0, "DapBreakpoint", { fg = "#ff0000", bold = true })
+      vim.api.nvim_set_hl(0, "DapLogPoint", { fg = "#61afef" })
+      vim.api.nvim_set_hl(0, "DapStopped", { fg = "#98c379" })
+
+      -- Definir signos con círculo rojo
+      vim.fn.sign_define("DapBreakpoint", { text = "●", texthl = "DapBreakpoint", numhl = "DapBreakpoint" })
+      vim.fn.sign_define("DapBreakpointCondition", { text = "●", texthl = "DapBreakpoint", numhl = "DapBreakpoint" })
+      vim.fn.sign_define("DapBreakpointRejected", { text = "●", texthl = "DapBreakpoint", numhl = "DapBreakpoint" })
+      vim.fn.sign_define("DapLogPoint", { text = "●", texthl = "DapLogPoint", numhl = "DapLogPoint" })
+      vim.fn.sign_define("DapStopped", { text = "➜", texthl = "DapStopped", linehl = "DapStoppedLine", numhl = "DapStopped" })
     end)
   end,
 })

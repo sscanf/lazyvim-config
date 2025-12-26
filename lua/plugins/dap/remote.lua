@@ -388,38 +388,28 @@ function _G.dap_remote_debug()
           -- 🔥 VARIABLE DE CONTROL
           _G.dapui_monitoring_active = true
 
+          -- 🔥 CACHÉ DE BUFFER PARA EVITAR BÚSQUEDAS REPETIDAS
+          local cached_console_buf = nil
+          local buffer_search_done = false
+
           -- 🔥 FUNCIÓN MEJORADA PARA ENCONTRAR LA CONSOLA DAP-UI
           local function find_dapui_console_buffer()
-            -- Buscar por filetype (dapui_console o dap-repl)
+            -- Buscar solo por dapui_console (NO dap-repl, que es manejado por nvim-dap)
             for _, buf in ipairs(vim.api.nvim_list_bufs()) do
               if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
                 local ok, ft = pcall(vim.api.nvim_buf_get_option, buf, "filetype")
-                if ok and (ft == "dapui_console" or ft == "dap-repl") then
-                  vim.notify("✅ Buffer de consola encontrado (ft: " .. ft .. ")", vim.log.levels.DEBUG)
+                if ok and ft == "dapui_console" then
                   return buf
                 end
               end
             end
 
-            -- Buscar por nombre de buffer
+            -- Buscar por nombre de buffer (solo DAP Console, no dap-repl)
             for _, buf in ipairs(vim.api.nvim_list_bufs()) do
               if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
                 local name = vim.api.nvim_buf_get_name(buf)
-                if name:match("DAP Console") or name:match("dap%-repl") then
-                  vim.notify("✅ Buffer de consola encontrado (name: " .. name .. ")", vim.log.levels.DEBUG)
+                if name:match("DAP Console") then
                   return buf
-                end
-              end
-            end
-
-            -- Debug: Listar todos los buffers disponibles
-            vim.notify("⚠️  No se encontró buffer de consola DAP. Buffers disponibles:", vim.log.levels.WARN)
-            for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-              if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
-                local ok, ft = pcall(vim.api.nvim_buf_get_option, buf, "filetype")
-                local name = vim.api.nvim_buf_get_name(buf)
-                if ok then
-                  vim.notify(string.format("  buf %d: ft=%s, name=%s", buf, ft or "none", name), vim.log.levels.WARN)
                 end
               end
             end
@@ -429,6 +419,7 @@ function _G.dap_remote_debug()
 
           -- Buffer de fallback para output remoto
           local fallback_buf = nil
+          local fallback_win = nil
           local function get_or_create_fallback_buffer()
             if not fallback_buf or not vim.api.nvim_buf_is_valid(fallback_buf) then
               fallback_buf = vim.api.nvim_create_buf(false, true)
@@ -436,18 +427,38 @@ function _G.dap_remote_debug()
               vim.api.nvim_buf_set_option(fallback_buf, "filetype", "log")
               vim.api.nvim_buf_set_option(fallback_buf, "bufhidden", "hide")
               vim.api.nvim_buf_set_option(fallback_buf, "swapfile", false)
-              vim.notify("📋 Creado buffer de fallback para output remoto. Usa :buffer 'Remote Debug Output'", vim.log.levels.INFO)
+
+              -- Abrir el buffer en un split horizontal al fondo
+              vim.cmd("botright 15split")
+              fallback_win = vim.api.nvim_get_current_win()
+              vim.api.nvim_win_set_buf(fallback_win, fallback_buf)
+
+              -- Volver a la ventana anterior
+              vim.cmd("wincmd p")
+
+              vim.notify("📋 Creado buffer de output remoto (visible en split inferior)", vim.log.levels.INFO)
             end
             return fallback_buf
           end
 
           -- 🔥 FUNCIÓN PARA AÑADIR TEXTO A LA CONSOLA
           local function append_to_console(message, is_error)
-            local console_buf = find_dapui_console_buffer()
+            -- Validar o buscar buffer
+            if not cached_console_buf or not vim.api.nvim_buf_is_valid(cached_console_buf) then
+              if not buffer_search_done then
+                cached_console_buf = find_dapui_console_buffer()
+                buffer_search_done = true
 
-            -- Si no hay consola DAP-UI, usar buffer de fallback
+                -- Si no hay consola DAP-UI, usar buffer de fallback
+                if not cached_console_buf then
+                  cached_console_buf = get_or_create_fallback_buffer()
+                end
+              end
+            end
+
+            local console_buf = cached_console_buf
             if not console_buf or not vim.api.nvim_buf_is_valid(console_buf) then
-              console_buf = get_or_create_fallback_buffer()
+              return false
             end
 
             pcall(function()
@@ -547,6 +558,10 @@ function _G.dap_remote_debug()
               end
 
               append_to_console("🛑 Streaming remoto finalizado", false)
+
+              -- Resetear caché de buffer para próxima sesión
+              cached_console_buf = nil
+              buffer_search_done = false
             end
           end
 
