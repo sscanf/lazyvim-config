@@ -1,3 +1,18 @@
+--[[
+================================================================================
+LAZY.NVIM BOOTSTRAP AND SETUP
+================================================================================
+This file handles the initialization and configuration of lazy.nvim plugin manager.
+Functions:
+  - Bootstrap lazy.nvim (auto-install if not present)
+  - Configure plugin loading from multiple sources:
+    * LazyVim core plugins
+    * LazyVim extras (typescript, json, mini-animate)
+    * Custom plugins organized by category (ai, cpp, dap, dev-tools, git, lsp, ui)
+  - Set up plugin manager behavior (lazy loading, updates, performance)
+================================================================================
+--]]
+
 -- Bootstrap lazy.nvim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not (vim.uv or vim.loop).fs_stat(lazypath) then

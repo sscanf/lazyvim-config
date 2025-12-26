@@ -1,3 +1,17 @@
+--[[
+================================================================================
+AUTO SESSION MANAGEMENT
+================================================================================
+Automatically saves and restores Neovim sessions.
+Features:
+  - Automatic session save/restore per project
+  - Session lens for browsing and loading sessions
+  - Excludes specific directories (home, downloads, root)
+  - Preserves buffers, windows, and tab layouts
+Plugin: rmagatti/auto-session
+================================================================================
+--]]
+
 return {
   "rmagatti/auto-session",
   config = function()

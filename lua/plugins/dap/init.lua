@@ -1,5 +1,16 @@
--- Base DAP configuration with breakpoint icons
--- Other DAP configs (python.lua, remote.lua, ui.lua, logger.lua) are loaded automatically by lazy.nvim
+--[[
+================================================================================
+DAP (DEBUG ADAPTER PROTOCOL) BASE CONFIGURATION
+================================================================================
+Base configuration for nvim-dap (Debug Adapter Protocol) debugging.
+Features:
+  - Breakpoint icons and highlighting
+  - Foundation for language-specific debug adapters
+  - Loads alongside other DAP modules (python.lua, remote.lua, ui.lua, logger.lua)
+Plugin: mfussenegger/nvim-dap
+================================================================================
+--]]
+
 return {
   "mfussenegger/nvim-dap",
   dependencies = { "rcarriga/nvim-dap-ui", "nvim-neotest/nvim-nio" },

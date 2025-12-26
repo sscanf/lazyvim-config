@@ -1,3 +1,19 @@
+--[[
+================================================================================
+GITSIGNS - GIT DECORATIONS AND HUNKS
+================================================================================
+Shows git diff information in the sign column and provides git hunk operations.
+Features:
+  - Git signs in gutter (add, change, delete)
+  - Current line blame display (enabled by default)
+  - Preview hunks with <leader>gp
+  - Toggle line blame with <leader>gt
+  - Stage/unstage hunks
+  - Navigate between hunks
+Plugin: lewis6991/gitsigns.nvim
+================================================================================
+--]]
+
 return {
   "lewis6991/gitsigns.nvim",
   opts = {

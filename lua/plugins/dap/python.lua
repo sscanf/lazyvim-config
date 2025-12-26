@@ -1,3 +1,17 @@
+--[[
+================================================================================
+PYTHON DEBUG ADAPTER CONFIGURATION
+================================================================================
+Configures DAP for Python debugging using debugpy.
+Features:
+  - Python debug adapter using debugpy
+  - Environment variables support (DEBUG_EXEC, DEBUG_ARGS)
+  - Project-specific DAP configuration loading (.nvim/dap.lua)
+  - Automatic pythonPath resolution
+Plugin: mfussenegger/nvim-dap-python
+================================================================================
+--]]
+
 return {
   "mfussenegger/nvim-dap",
   dependencies = { "mfussenegger/nvim-dap-python" },

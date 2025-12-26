@@ -1,5 +1,18 @@
--- Debug log capture system for DAP
--- Captures debug output and provides keybindings to show/hide logs
+--[[
+================================================================================
+DAP DEBUG LOG CAPTURE SYSTEM
+================================================================================
+Captures and displays debug output in a dedicated buffer.
+Features:
+  - Automatic log capture from debug sessions
+  - Dedicated log buffer with syntax highlighting
+  - Show logs with <leader>dl
+  - Hide logs with <leader>dh
+  - Auto-show logs when debugging terminates
+Plugin: mfussenegger/nvim-dap
+================================================================================
+--]]
+
 return {
   "mfussenegger/nvim-dap",
   config = function()

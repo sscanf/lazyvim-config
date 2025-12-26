@@ -1,3 +1,18 @@
+--[[
+================================================================================
+NEOVIM MAIN CONFIGURATION FILE
+================================================================================
+This is the main entry point for Neovim configuration.
+Responsibilities:
+  - Initialize lazy.nvim (plugin manager)
+  - Load LazyVim base configuration
+  - Configure Tab key behavior in insert mode
+
+This file loads the config.lazy module which in turn loads all plugins
+organized by categories (ai, cpp, dap, dev-tools, git, lsp, ui).
+================================================================================
+--]]
+
 -- bootstrap lazy.nvim, LazyVim and your plugins
 require("config.lazy")
 

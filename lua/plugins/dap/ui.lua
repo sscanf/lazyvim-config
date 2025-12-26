@@ -1,3 +1,26 @@
+--[[
+================================================================================
+DAP UI (DEBUG INTERFACE)
+================================================================================
+Provides a comprehensive UI for nvim-dap debugging sessions.
+Layout configuration:
+  Right panel (40 cols):
+    - Scopes (35%)
+    - Locals (35%)
+    - Watches (30%)
+  Bottom panel (10 rows):
+    - REPL (50%)
+    - Console (20%)
+    - Breakpoints (10%)
+    - Stacks (20%)
+Features:
+  - Auto-open on debug session start
+  - Auto-close on debug session end
+  - Floating window support
+Plugin: rcarriga/nvim-dap-ui
+================================================================================
+--]]
+
 return {
   "rcarriga/nvim-dap-ui",
   lazy = false,

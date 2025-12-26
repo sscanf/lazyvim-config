@@ -1,3 +1,17 @@
+--[[
+================================================================================
+GITHUB COPILOT INTEGRATION
+================================================================================
+Configures GitHub Copilot AI assistant for code completion.
+Features:
+  - Auto-trigger suggestions while typing
+  - Accept suggestions with Shift+Tab
+  - Enabled for all file types
+  - Panel disabled (suggestions shown inline)
+Plugin: zbirenbaum/copilot.lua
+================================================================================
+--]]
+
 return {
   {
     "zbirenbaum/copilot.lua",

@@ -1,3 +1,23 @@
+--[[
+================================================================================
+CUSTOM KEYMAPS CONFIGURATION
+================================================================================
+This file contains all custom keyboard mappings for Neovim.
+Default LazyVim keymaps: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/keymaps.lua
+
+Key mappings organized by functionality:
+  - CMake/Debug commands (Alt+r, Alt+k, Alt+d, Alt+i, Alt+v, Alt+t, Alt+D)
+  - Buffer navigation (Tab, Shift+Tab, Alt+b)
+  - Window navigation (Shift+Arrow keys)
+  - Window resizing (Ctrl+Shift+Arrow keys)
+  - C++ tools (F4 for source/header switch, cppassist commands)
+  - DAP debugging (leader+d prefix for debug commands)
+  - LSP navigation (F2 for go to definition, Shift+F2 for back)
+  - Search (Ctrl+Shift+f for grep)
+  - Terminal (Shift+F5)
+================================================================================
+--]]
+
 -- Keymaps are automatically loaded on the VeryLazy event
 -- Default keymaps that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/keymaps.lua
 -- Add any additional keymaps here

@@ -1,3 +1,24 @@
+--[[
+================================================================================
+REMOTE C/C++ DEBUGGING CONFIGURATION
+================================================================================
+Advanced configuration for remote C/C++ debugging via SSH and gdbserver.
+Features:
+  - Remote debugging over SSH with gdbserver
+  - Automatic program deployment to remote host
+  - CMake integration for build paths
+  - Environment variables configuration (REMOTE_SSH_HOST, REMOTE_SSH_PORT, etc.)
+  - GDB pretty printers support
+  - Remote output monitoring (stdout/stderr)
+  - Keymap: <leader>dR to start remote debugging with arguments
+Requirements:
+  - sshpass for SSH authentication
+  - CMake project with CMakeCache.txt
+  - Environment variables: REMOTE_SSH_HOST, SSHPASS, LOCAL_PROGRAM_PATH, etc.
+Plugin: mfussenegger/nvim-dap with cppdbg adapter
+================================================================================
+--]]
+
 local dap = require("dap")
 
 -- ===== Configs base =====

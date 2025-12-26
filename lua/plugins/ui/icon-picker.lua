@@ -1,3 +1,21 @@
+--[[
+================================================================================
+ICON PICKER - NERD FONT ICONS SELECTOR
+================================================================================
+Provides an interactive picker for inserting Nerd Font icons.
+Features:
+  - Browse and search Nerd Font icons
+  - Insert icons with Ctrl+i (insert/normal mode)
+  - Pick icons with <leader>ip
+  - Fuzzy search for icons
+  - Custom window with rounded borders
+Keymaps:
+  - <C-i>: Insert icon (insert/normal mode)
+  - <leader>ip: Open icon picker (normal mode)
+Plugin: ziontee113/icon-picker.nvim
+================================================================================
+--]]
+
 return {
   "ziontee113/icon-picker.nvim",
   dependencies = { "nvim-telescope/telescope.nvim" },
