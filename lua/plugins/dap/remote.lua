@@ -9,11 +9,20 @@ Features:
   - CMake integration for build paths
   - Environment variables configuration (REMOTE_SSH_HOST, REMOTE_SSH_PORT, etc.)
   - GDB pretty printers support
-  - Remote output monitoring (stdout/stderr)
+  - Real-time output streaming (stdout/stderr) using tail -f (NO POLLING!)
   - Keymap: <leader>dR to start remote debugging with arguments
+
+Output Capture:
+  - Uses 'script' command to capture all program output
+  - Streams output in real-time with 'tail -f' (zero polling, zero delay)
+  - One persistent SSH connection for streaming (very low resource usage)
+  - Control with <leader>dC (cleanup) and <leader>dM (status)
+  - Disable with: export DAP_MONITOR_ENABLED=false
+
 Requirements:
   - sshpass for SSH authentication
   - CMake project with CMakeCache.txt
+  - script and tail commands on remote host (standard in all Linux distros)
   - Environment variables: REMOTE_SSH_HOST, SSHPASS, LOCAL_PROGRAM_PATH, etc.
 Plugin: mfussenegger/nvim-dap with cppdbg adapter
 ================================================================================
@@ -277,20 +286,20 @@ function _G.dap_remote_debug()
         table.insert(qargs, shell_quote(a))
       end
 
-      -- 🔥 MODIFICACIÓN: Redirigir salida a archivos temporales específicos
+      -- 🔥 STREAMING CON SCRIPT: Captura salida sin polling
       local output_base = "/tmp/" .. path_basename(rprog)
-      local stdout_file = output_base .. ".stdout"
-      local stderr_file = output_base .. ".stderr"
+      local output_file = output_base .. ".output"  -- Un solo archivo con todo
 
       local kill_pat = shell_quote("gdbserver :" .. gdb_port)
+      -- Usar 'script' para capturar toda la salida en un archivo
+      -- script -q = quiet (sin mensajes), -f = flush inmediato, -c = comando
       local cmd = string.format(
-        "pkill -f %s || true; nohup gdbserver :%s %s %s > %s 2> %s & disown",
+        "pkill -f %s || true; nohup script -q -f -c 'gdbserver :%s %s %s' %s & disown",
         kill_pat,
         gdb_port,
         shell_quote(rprog),
         table.concat(qargs, " "),
-        stdout_file,
-        stderr_file
+        shell_quote(output_file)
       )
 
       local ssh_cmd = build_ssh_command(cmd)
@@ -373,106 +382,77 @@ function _G.dap_remote_debug()
             return true
           end
 
-          -- 🔥 MONITOREO PRINCIPAL (OPTIMIZADO)
-          local last_stdout_size = 0
-          local last_stderr_size = 0
+          -- 🔥 STREAMING EN TIEMPO REAL CON TAIL -F (SIN POLLING)
+          local monitor_enabled = os.getenv("DAP_MONITOR_ENABLED") ~= "false"
 
-          local function monitor_output()
-            if not _G.dapui_monitoring_active or _G.dapui_monitoring_paused then
-              return
-            end
+          if monitor_enabled then
+            -- Construir comando SSH con tail -f para streaming continuo
+            local tail_cmd = build_ssh_command("tail -f -n 0 " .. shell_quote(output_file) .. " 2>/dev/null")
 
-            -- Leer SOLO el tamaño de los archivos primero (más rápido)
-            local function get_file_size(file)
-              local cmd = build_ssh_command("stat -c%s " .. shell_quote(file) .. " 2>/dev/null || echo 0")
-              local result = vim.fn.system(cmd)
-              return tonumber(result) or 0
-            end
+            vim.notify("🔍 Iniciando streaming de salida remota...", vim.log.levels.INFO)
 
-            -- Solo leer contenido si el archivo creció
-            local function read_remote_file_tail(file, last_size)
-              if last_size == 0 then
-                -- Primera lectura: solo últimas 50 líneas
-                local cmd = build_ssh_command("tail -n 50 " .. shell_quote(file) .. " 2>/dev/null || echo ''")
-                local result = vim.fn.systemlist(cmd) or {}
-                return table.concat(result, "\n")
-              else
-                -- Leer solo nuevas líneas desde la última posición
-                local cmd = build_ssh_command("tail -c +" .. (last_size + 1) .. " " .. shell_quote(file) .. " 2>/dev/null || echo ''")
-                local result = vim.fn.systemlist(cmd) or {}
-                return table.concat(result, "\n")
-              end
-            end
+            -- Iniciar job con tail -f (streaming continuo, sin polling)
+            _G.dapui_monitor_job = vim.fn.jobstart(tail_cmd, {
+              on_stdout = function(_, lines)
+                if not _G.dapui_monitoring_active then
+                  return
+                end
 
-            vim.schedule(function()
-              if not _G.dapui_monitoring_active then
-                return
-              end
-
-              -- Verificar tamaños primero (más eficiente)
-              local stdout_size = get_file_size(stdout_file)
-              local stderr_size = get_file_size(stderr_file)
-
-              -- Solo leer si hay contenido nuevo
-              if stdout_size > last_stdout_size then
-                local stdout_content = read_remote_file_tail(stdout_file, last_stdout_size)
-                if stdout_content ~= "" then
-                  for line in stdout_content:gmatch("[^\r\n]+") do
-                    if line ~= "" then
-                      append_to_console(line, false)
+                -- Este callback se ejecuta AUTOMÁTICAMENTE cuando hay nuevas líneas
+                vim.schedule(function()
+                  for _, line in ipairs(lines) do
+                    if line ~= "" and not line:match("^Script ") then  -- Filtrar mensajes de 'script'
+                      -- Detectar si es stderr (líneas con "error", "warning", etc.)
+                      local is_error = line:match("[Ee]rror") or line:match("[Ww]arning") or line:match("FAIL")
+                      append_to_console(line, is_error)
                     end
                   end
-                end
-                last_stdout_size = stdout_size
-              end
-
-              if stderr_size > last_stderr_size then
-                local stderr_content = read_remote_file_tail(stderr_file, last_stderr_size)
-                if stderr_content ~= "" then
-                  for line in stderr_content:gmatch("[^\r\n]+") do
+                end)
+              end,
+              on_stderr = function(_, lines)
+                -- Errores del comando SSH/tail mismo
+                vim.schedule(function()
+                  for _, line in ipairs(lines) do
                     if line ~= "" then
-                      append_to_console(line, true)
+                      vim.notify("SSH/tail error: " .. line, vim.log.levels.WARN)
                     end
                   end
+                end)
+              end,
+              on_exit = function(_, code)
+                if code ~= 0 and _G.dapui_monitoring_active then
+                  vim.notify("⚠️  Streaming de salida terminó (código: " .. code .. ")", vim.log.levels.WARN)
                 end
-                last_stderr_size = stderr_size
-              end
-            end)
-          end
+                _G.dapui_monitor_job = nil
+              end,
+              stdout_buffered = false,  -- Streaming inmediato, sin buffer
+              stderr_buffered = false,
+            })
 
-          -- 🔥 CONFIGURAR TIMER (configurable via variable de entorno)
-          local monitor_interval = tonumber(os.getenv("DAP_MONITOR_INTERVAL")) or 3000 -- 3 segundos por defecto
-          local monitor_enabled = os.getenv("DAP_MONITOR_ENABLED") ~= "false" -- Habilitado por defecto
-
-          if vim.loop and vim.loop.new_timer and monitor_enabled then
-            _G.dapui_monitor_timer = vim.loop.new_timer()
-            _G.dapui_monitor_timer:start(monitor_interval, monitor_interval, function()
-              monitor_output()
-            end)
-            vim.notify("🔍 Monitoreo remoto: " .. monitor_interval .. "ms", vim.log.levels.INFO)
+            -- Mensaje inicial
+            vim.defer_fn(function()
+              append_to_console("🎯 Streaming remoto iniciado (sin polling)", false)
+              append_to_console("📁 Archivo: " .. output_file, false)
+              append_to_console("⚡ Modo: tail -f (tiempo real)", false)
+            end, 500)
           else
             vim.notify("ℹ️  Monitoreo remoto deshabilitado", vim.log.levels.INFO)
           end
-
-          -- 🔥 MENSAJE INICIAL
-          vim.defer_fn(function()
-            append_to_console("🎯 Monitoreo remoto iniciado", false)
-            append_to_console("📁 STDOUT: " .. stdout_file, false)
-            append_to_console("📁 STDERR: " .. stderr_file, false)
-          end, 1000)
 
           -- 🔥 LIMPIAR AL TERMINAR
           local function cleanup_monitor()
             if _G.dapui_monitoring_active then
               _G.dapui_monitoring_active = false
-              if _G.dapui_monitor_timer then
+
+              -- Matar el job de tail -f
+              if _G.dapui_monitor_job then
                 pcall(function()
-                  _G.dapui_monitor_timer:stop()
-                  _G.dapui_monitor_timer:close()
-                  _G.dapui_monitor_timer = nil
+                  vim.fn.jobstop(_G.dapui_monitor_job)
+                  _G.dapui_monitor_job = nil
                 end)
               end
-              append_to_console("🛑 Monitoreo remoto finalizado", false)
+
+              append_to_console("🛑 Streaming remoto finalizado", false)
             end
           end
 
@@ -495,49 +475,27 @@ vim.keymap.set("n", "<leader>dR", _G.dap_remote_debug, { desc = "Debug Remote (c
 
 -- ========== COMANDOS DE CONTROL DEL MONITOREO ==========
 
--- Limpiar/detener el timer de monitoreo
+-- Limpiar/detener el streaming de monitoreo
 vim.api.nvim_create_user_command("DapCleanupMonitor", function()
   if _G.dapui_monitoring_active then
     _G.dapui_monitoring_active = false
-    if _G.dapui_monitor_timer then
+    if _G.dapui_monitor_job then
       pcall(function()
-        _G.dapui_monitor_timer:stop()
-        _G.dapui_monitor_timer:close()
-        _G.dapui_monitor_timer = nil
+        vim.fn.jobstop(_G.dapui_monitor_job)
+        _G.dapui_monitor_job = nil
       end)
     end
-    vim.notify("✅ Timer de monitoreo limpiado", vim.log.levels.INFO)
+    vim.notify("✅ Streaming de monitoreo detenido", vim.log.levels.INFO)
   else
-    vim.notify("ℹ️  No hay timer activo", vim.log.levels.INFO)
+    vim.notify("ℹ️  No hay streaming activo", vim.log.levels.INFO)
   end
-end, { desc = "Limpiar timer de monitoreo remoto" })
-
--- Pausar el monitoreo temporalmente (sin destruir el timer)
-vim.api.nvim_create_user_command("DapPauseMonitor", function()
-  if _G.dapui_monitoring_active then
-    _G.dapui_monitoring_paused = true
-    vim.notify("⏸️  Monitoreo pausado", vim.log.levels.INFO)
-  else
-    vim.notify("ℹ️  No hay monitoreo activo", vim.log.levels.INFO)
-  end
-end, { desc = "Pausar monitoreo remoto" })
-
--- Reanudar el monitoreo
-vim.api.nvim_create_user_command("DapResumeMonitor", function()
-  if _G.dapui_monitoring_active then
-    _G.dapui_monitoring_paused = false
-    vim.notify("▶️  Monitoreo reanudado", vim.log.levels.INFO)
-  else
-    vim.notify("ℹ️  No hay monitoreo activo", vim.log.levels.INFO)
-  end
-end, { desc = "Reanudar monitoreo remoto" })
+end, { desc = "Detener streaming de monitoreo remoto" })
 
 -- Mostrar estado del monitoreo
 vim.api.nvim_create_user_command("DapMonitorStatus", function()
   if _G.dapui_monitoring_active then
-    local paused = _G.dapui_monitoring_paused and " (PAUSADO)" or " (ACTIVO)"
-    local timer_exists = _G.dapui_monitor_timer and "Sí" or "No"
-    vim.notify(string.format("Monitor: %s | Timer: %s", paused, timer_exists), vim.log.levels.INFO)
+    local job_status = _G.dapui_monitor_job and "Activo (streaming)" or "Inactivo"
+    vim.notify(string.format("🔍 Monitor: %s | Job ID: %s", job_status, tostring(_G.dapui_monitor_job or "N/A")), vim.log.levels.INFO)
   else
     vim.notify("ℹ️  Monitoreo inactivo", vim.log.levels.INFO)
   end
@@ -545,7 +503,6 @@ end, { desc = "Estado del monitoreo remoto" })
 
 -- Keymaps rápidos
 vim.keymap.set("n", "<leader>dC", ":DapCleanupMonitor<CR>", { desc = "Cleanup Debug Monitor" })
-vim.keymap.set("n", "<leader>dP", ":DapPauseMonitor<CR>", { desc = "Pause Debug Monitor" })
 vim.keymap.set("n", "<leader>dM", ":DapMonitorStatus<CR>", { desc = "Monitor Status" })
 
 return {}
