@@ -313,10 +313,15 @@ function _G.dap_remote_debug()
       end
 
       -- Comando final: ejecutar script con redirecciones simples
-      -- Usamos >> para append y redirigimos tanto stdout como stderr
+      -- Matar procesos gdbserver anteriores (compatible con sistemas sin pkill)
+      local kill_cmd = string.format(
+        "ps aux | grep 'gdbserver :%s' | grep -v grep | awk '{print $2}' | xargs -r kill -9 2>/dev/null || true",
+        gdb_port
+      )
+
       local cmd = string.format(
-        "pkill -f %s || true; rm -f %s; touch %s; nohup %s >> %s 2>&1 & echo $!",
-        kill_pat,
+        "%s; rm -f %s; touch %s; nohup %s >> %s 2>&1 & echo $!",
+        kill_cmd,
         shell_quote(output_file),
         shell_quote(output_file),
         shell_quote(script_file),
@@ -348,28 +353,35 @@ function _G.dap_remote_debug()
       vim.notify("⏳ Esperando " .. (wait_ms / 1000) .. " s para que gdbserver escuche...", vim.log.levels.WARN)
 
       vim.defer_fn(function()
-        -- Verificar si gdbserver está corriendo antes de conectar
-        local check_cmd = build_ssh_command("pgrep -f 'gdbserver :" .. gdb_port .. "'")
+        -- Verificar si gdbserver está corriendo (compatible sin pgrep)
+        local check_cmd = build_ssh_command("ps aux | grep 'gdbserver :" .. gdb_port .. "' | grep -v grep")
         local check_result = vim.fn.system(check_cmd)
 
-        if vim.v.shell_error ~= 0 then
+        if vim.v.shell_error ~= 0 or check_result == "" then
           vim.notify("⚠️  Gdbserver no está corriendo en el host remoto", vim.log.levels.WARN)
-          vim.notify("💡 Verifica manualmente: ssh root@" .. os.getenv("REMOTE_SSH_HOST") .. " 'ps aux | grep gdbserver'", vim.log.levels.INFO)
+          -- Intentar leer el output file para ver errores
+          local error_check = build_ssh_command("cat " .. shell_quote(output_file) .. " 2>/dev/null | head -20")
+          local error_output = vim.fn.system(error_check)
+          if error_output ~= "" then
+            vim.notify("📄 Output de gdbserver:\n" .. error_output, vim.log.levels.WARN)
+          end
         else
-          vim.notify("✅ Gdbserver está corriendo (PID: " .. vim.trim(check_result) .. ")", vim.log.levels.INFO)
+          vim.notify("✅ Gdbserver está corriendo", vim.log.levels.INFO)
         end
 
-        -- Verificar si el puerto está escuchando
-        local port_check = build_ssh_command("ss -tuln | grep :" .. gdb_port)
+        -- Verificar si el puerto está escuchando (con fallback a netstat)
+        local port_check = build_ssh_command("(ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null) | grep ':" .. gdb_port .. "'")
         local port_result = vim.fn.system(port_check)
 
-        if vim.v.shell_error ~= 0 then
-          vim.notify("⚠️  Puerto " .. gdb_port .. " no está escuchando", vim.log.levels.WARN)
+        if vim.v.shell_error ~= 0 or not port_result:match(gdb_port) then
+          vim.notify("⚠️  Puerto " .. gdb_port .. " puede no estar escuchando aún", vim.log.levels.WARN)
+          vim.notify("💡 Esto es normal - gdbserver espera la primera conexión para abrir el puerto", vim.log.levels.INFO)
         else
           vim.notify("✅ Puerto " .. gdb_port .. " está escuchando", vim.log.levels.INFO)
         end
 
         vim.notify("🛰️ Conectando depurador...", vim.log.levels.INFO)
+        vim.notify("ℹ️  Si ves 'Cursor position outside buffer', recompila el ejecutable con símbolos de debug (-g)", vim.log.levels.INFO)
 
         -- 🔥 Configurar función para monitorear la salida
         local function setup_output_monitoring()
