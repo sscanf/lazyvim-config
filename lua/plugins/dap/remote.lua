@@ -390,12 +390,12 @@ function _G.dap_remote_debug()
 
           -- 🔥 FUNCIÓN MEJORADA PARA ENCONTRAR LA CONSOLA DAP-UI
           local function find_dapui_console_buffer()
-            -- Intentar encontrar por filetype primero
+            -- Buscar por filetype (dapui_console o dap-repl)
             for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-              if vim.api.nvim_buf_is_valid(buf) then
-                local ft = pcall(vim.api.nvim_buf_get_option, buf, "filetype")
-                if ft == "dap-repl" then
-                  print("ENcontrado!!!!!!")
+              if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
+                local ok, ft = pcall(vim.api.nvim_buf_get_option, buf, "filetype")
+                if ok and (ft == "dapui_console" or ft == "dap-repl") then
+                  vim.notify("✅ Buffer de consola encontrado (ft: " .. ft .. ")", vim.log.levels.DEBUG)
                   return buf
                 end
               end
@@ -403,20 +403,51 @@ function _G.dap_remote_debug()
 
             -- Buscar por nombre de buffer
             for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-              local name = vim.api.nvim_buf_get_name(buf)
-              if name:match("dapui") and name:match("console") then
-                return buf
+              if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
+                local name = vim.api.nvim_buf_get_name(buf)
+                if name:match("DAP Console") or name:match("dap%-repl") then
+                  vim.notify("✅ Buffer de consola encontrado (name: " .. name .. ")", vim.log.levels.DEBUG)
+                  return buf
+                end
+              end
+            end
+
+            -- Debug: Listar todos los buffers disponibles
+            vim.notify("⚠️  No se encontró buffer de consola DAP. Buffers disponibles:", vim.log.levels.WARN)
+            for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+              if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_is_loaded(buf) then
+                local ok, ft = pcall(vim.api.nvim_buf_get_option, buf, "filetype")
+                local name = vim.api.nvim_buf_get_name(buf)
+                if ok then
+                  vim.notify(string.format("  buf %d: ft=%s, name=%s", buf, ft or "none", name), vim.log.levels.WARN)
+                end
               end
             end
 
             return nil
           end
 
+          -- Buffer de fallback para output remoto
+          local fallback_buf = nil
+          local function get_or_create_fallback_buffer()
+            if not fallback_buf or not vim.api.nvim_buf_is_valid(fallback_buf) then
+              fallback_buf = vim.api.nvim_create_buf(false, true)
+              vim.api.nvim_buf_set_name(fallback_buf, "Remote Debug Output")
+              vim.api.nvim_buf_set_option(fallback_buf, "filetype", "log")
+              vim.api.nvim_buf_set_option(fallback_buf, "bufhidden", "hide")
+              vim.api.nvim_buf_set_option(fallback_buf, "swapfile", false)
+              vim.notify("📋 Creado buffer de fallback para output remoto. Usa :buffer 'Remote Debug Output'", vim.log.levels.INFO)
+            end
+            return fallback_buf
+          end
+
           -- 🔥 FUNCIÓN PARA AÑADIR TEXTO A LA CONSOLA
           local function append_to_console(message, is_error)
             local console_buf = find_dapui_console_buffer()
+
+            -- Si no hay consola DAP-UI, usar buffer de fallback
             if not console_buf or not vim.api.nvim_buf_is_valid(console_buf) then
-              return false
+              console_buf = get_or_create_fallback_buffer()
             end
 
             pcall(function()
@@ -424,17 +455,19 @@ function _G.dap_remote_debug()
               vim.api.nvim_buf_set_option(console_buf, "modifiable", true)
 
               local timestamp = os.date("%H:%M:%S")
-              local prefix = is_error and "🚨 [REMOTO-ERR] " or "📤 [REMOTO-OUT] "
+              local prefix = is_error and "🚨 [ERR] " or "📤 [OUT] "
               local formatted_msg = string.format("[%s] %s%s", timestamp, prefix, message)
 
               vim.api.nvim_buf_set_lines(console_buf, last_line, last_line, false, { formatted_msg })
               vim.api.nvim_buf_set_option(console_buf, "modifiable", false)
 
               -- Auto-scroll si la ventana está visible
-              local wins = vim.fn.getbufinfo(console_buf)[1].windows or {}
-              for _, winid in ipairs(wins) do
-                if vim.api.nvim_win_is_valid(winid) then
-                  vim.api.nvim_win_set_cursor(winid, { last_line + 1, 0 })
+              local buf_info = vim.fn.getbufinfo(console_buf)
+              if buf_info and buf_info[1] and buf_info[1].windows then
+                for _, winid in ipairs(buf_info[1].windows) do
+                  if vim.api.nvim_win_is_valid(winid) then
+                    vim.api.nvim_win_set_cursor(winid, { last_line + 1, 0 })
+                  end
                 end
               end
             end)
@@ -533,6 +566,40 @@ function _G.dap_remote_debug()
   end)
 end
 vim.keymap.set("n", "<leader>dR", _G.dap_remote_debug, { desc = "Debug Remote (con Argumentos)" })
+
+-- ========== COMANDOS PARA VER OUTPUT ==========
+
+-- Comando para abrir el buffer de output remoto
+vim.api.nvim_create_user_command("DapShowOutput", function()
+  -- Buscar el buffer de output
+  local buf = nil
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(b)
+    if name:match("Remote Debug Output") then
+      buf = b
+      break
+    end
+  end
+
+  if buf then
+    -- Abrir en split horizontal
+    vim.cmd("split")
+    vim.api.nvim_win_set_buf(0, buf)
+    vim.notify("✅ Buffer de output abierto", vim.log.levels.INFO)
+  else
+    vim.notify("⚠️  No hay buffer de output remoto. Inicia un debug remoto primero.", vim.log.levels.WARN)
+  end
+end, { desc = "Abrir buffer de output remoto" })
+
+-- Keymap para abrir output rápidamente
+vim.keymap.set("n", "<leader>do", ":DapShowOutput<CR>", { desc = "Show Remote Debug Output" })
+
+-- Comando para abrir/cerrar DAP-UI
+vim.api.nvim_create_user_command("DapUIToggle", function()
+  require("dapui").toggle()
+end, { desc = "Toggle DAP UI" })
+
+vim.keymap.set("n", "<leader>du", ":DapUIToggle<CR>", { desc = "Toggle DAP UI" })
 
 -- ========== COMANDOS DE CONTROL DEL MONITOREO ==========
 
