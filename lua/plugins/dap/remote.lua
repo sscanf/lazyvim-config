@@ -286,19 +286,47 @@ function _G.dap_remote_debug()
         table.insert(qargs, shell_quote(a))
       end
 
-      -- 🔥 STREAMING CON SCRIPT: Captura salida sin polling
+      -- 🔥 STREAMING: Captura salida sin polling
       local output_base = "/tmp/" .. path_basename(rprog)
-      local output_file = output_base .. ".output"  -- Un solo archivo con todo
+      local output_file = output_base .. ".output"
 
+      -- Crear script temporal en el host remoto para evitar problemas de comillas
+      local script_file = output_base .. ".sh"
       local kill_pat = shell_quote("gdbserver :" .. gdb_port)
-      -- Usar 'script' para capturar toda la salida en un archivo
-      -- script -q = quiet (sin mensajes), -f = flush inmediato, -c = comando
+
+      -- Paso 1: Crear script en el host remoto
+      local gdb_command = string.format("gdbserver :%s %s %s", gdb_port, rprog, table.concat(args, " "))
+      local create_script = string.format(
+        "cat > %s << 'EOFSCRIPT'\n#!/bin/bash\nexec %s\nEOFSCRIPT\nchmod +x %s",
+        shell_quote(script_file),
+        gdb_command,
+        shell_quote(script_file)
+      )
+
+      -- Ejecutar creación del script
+      local create_cmd = build_ssh_command(create_script)
+      vim.notify("📝 Creando script remoto: " .. script_file, vim.log.levels.INFO)
+      vim.notify("🔧 Comando gdbserver: " .. gdb_command, vim.log.levels.DEBUG)
+
+      local create_result = vim.fn.system(create_cmd)
+      if vim.v.shell_error ~= 0 then
+        vim.notify("❌ Error creando script: " .. create_result, vim.log.levels.ERROR)
+        return
+      end
+
+      -- Verificar que el script se creó correctamente
+      local verify_cmd = build_ssh_command("cat " .. shell_quote(script_file))
+      local script_content = vim.fn.system(verify_cmd)
+      if vim.v.shell_error == 0 then
+        vim.notify("✅ Script creado exitosamente", vim.log.levels.INFO)
+        vim.notify("📄 Contenido:\n" .. script_content, vim.log.levels.DEBUG)
+      end
+
+      -- Paso 2: Ejecutar gdbserver usando script command
       local cmd = string.format(
-        "pkill -f %s || true; nohup script -q -f -c 'gdbserver :%s %s %s' %s & disown",
+        "pkill -f %s || true; nohup script -q -f -c %s %s </dev/null >/dev/null 2>&1 & disown",
         kill_pat,
-        gdb_port,
-        shell_quote(rprog),
-        table.concat(qargs, " "),
+        shell_quote(script_file),
         shell_quote(output_file)
       )
 
@@ -308,6 +336,10 @@ function _G.dap_remote_debug()
       end
 
       vim.notify("🚀 Iniciando gdbserver remoto en " .. rprog .. "...", vim.log.levels.INFO)
+      vim.notify("📋 Script: " .. script_file, vim.log.levels.DEBUG)
+      vim.notify("📋 Output: " .. output_file, vim.log.levels.DEBUG)
+      vim.notify("📋 Comando: " .. cmd, vim.log.levels.DEBUG)
+
       vim.fn.jobstart(ssh_cmd, {
         detach = true,
         on_exit = function(_, code)
@@ -317,10 +349,31 @@ function _G.dap_remote_debug()
         end,
       })
 
-      local wait_ms = tonumber(os.getenv("DEBUG_WAIT_TIME")) or 700
+      local wait_ms = tonumber(os.getenv("DEBUG_WAIT_TIME")) or 3000
       vim.notify("⏳ Esperando " .. (wait_ms / 1000) .. " s para que gdbserver escuche...", vim.log.levels.WARN)
 
       vim.defer_fn(function()
+        -- Verificar si gdbserver está corriendo antes de conectar
+        local check_cmd = build_ssh_command("pgrep -f 'gdbserver :" .. gdb_port .. "'")
+        local check_result = vim.fn.system(check_cmd)
+
+        if vim.v.shell_error ~= 0 then
+          vim.notify("⚠️  Gdbserver no está corriendo en el host remoto", vim.log.levels.WARN)
+          vim.notify("💡 Verifica manualmente: ssh root@" .. os.getenv("REMOTE_SSH_HOST") .. " 'ps aux | grep gdbserver'", vim.log.levels.INFO)
+        else
+          vim.notify("✅ Gdbserver está corriendo (PID: " .. vim.trim(check_result) .. ")", vim.log.levels.INFO)
+        end
+
+        -- Verificar si el puerto está escuchando
+        local port_check = build_ssh_command("ss -tuln | grep :" .. gdb_port)
+        local port_result = vim.fn.system(port_check)
+
+        if vim.v.shell_error ~= 0 then
+          vim.notify("⚠️  Puerto " .. gdb_port .. " no está escuchando", vim.log.levels.WARN)
+        else
+          vim.notify("✅ Puerto " .. gdb_port .. " está escuchando", vim.log.levels.INFO)
+        end
+
         vim.notify("🛰️ Conectando depurador...", vim.log.levels.INFO)
 
         -- 🔥 Configurar función para monitorear la salida
@@ -504,5 +557,93 @@ end, { desc = "Estado del monitoreo remoto" })
 -- Keymaps rápidos
 vim.keymap.set("n", "<leader>dC", ":DapCleanupMonitor<CR>", { desc = "Cleanup Debug Monitor" })
 vim.keymap.set("n", "<leader>dM", ":DapMonitorStatus<CR>", { desc = "Monitor Status" })
+
+-- Comando de diagnóstico para verificar la configuración de debugging remoto
+vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
+  local host = os.getenv("REMOTE_SSH_HOST")
+  local port = os.getenv("REMOTE_SSH_PORT") or "2222"
+  local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or "10000"
+
+  vim.notify("🔍 Diagnóstico de Debugging Remoto", vim.log.levels.INFO)
+  vim.notify("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+
+  -- Verificar variables de entorno
+  local vars = {
+    "REMOTE_SSH_HOST",
+    "REMOTE_SSH_PORT",
+    "SSHPASS",
+    "LOCAL_PROGRAM_PATH",
+    "LOCAL_GDB_PATH",
+    "REMOTE_GDBSERVER_PORT"
+  }
+
+  for _, var in ipairs(vars) do
+    local value = os.getenv(var)
+    if value then
+      if var == "SSHPASS" then
+        vim.notify("✅ " .. var .. ": ***", vim.log.levels.INFO)
+      else
+        vim.notify("✅ " .. var .. ": " .. value, vim.log.levels.INFO)
+      end
+    else
+      vim.notify("❌ " .. var .. ": NO DEFINIDA", vim.log.levels.WARN)
+    end
+  end
+
+  if not host then
+    vim.notify("❌ REMOTE_SSH_HOST no definida. No se pueden hacer más verificaciones.", vim.log.levels.ERROR)
+    return
+  end
+
+  vim.notify("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+
+  -- Verificar conectividad SSH
+  vim.notify("🔌 Verificando conectividad SSH...", vim.log.levels.INFO)
+  local ssh_test = build_ssh_command("echo 'OK'")
+  local result = vim.fn.system(ssh_test)
+  if vim.v.shell_error == 0 then
+    vim.notify("✅ Conexión SSH exitosa", vim.log.levels.INFO)
+  else
+    vim.notify("❌ Conexión SSH fallida: " .. result, vim.log.levels.ERROR)
+    return
+  end
+
+  -- Verificar si gdbserver está instalado
+  vim.notify("📦 Verificando gdbserver...", vim.log.levels.INFO)
+  local gdb_check = build_ssh_command("which gdbserver")
+  local gdb_path = vim.fn.system(gdb_check)
+  if vim.v.shell_error == 0 then
+    vim.notify("✅ Gdbserver encontrado en: " .. vim.trim(gdb_path), vim.log.levels.INFO)
+  else
+    vim.notify("❌ Gdbserver NO instalado en el host remoto", vim.log.levels.ERROR)
+    vim.notify("💡 Instala con: ssh root@" .. host .. " 'apt-get install gdbserver'", vim.log.levels.INFO)
+  end
+
+  -- Verificar si hay procesos gdbserver corriendo
+  vim.notify("🔍 Buscando procesos gdbserver...", vim.log.levels.INFO)
+  local ps_check = build_ssh_command("ps aux | grep gdbserver | grep -v grep")
+  local ps_result = vim.fn.system(ps_check)
+  if vim.v.shell_error == 0 and ps_result ~= "" then
+    vim.notify("⚙️  Procesos gdbserver activos:", vim.log.levels.INFO)
+    for line in ps_result:gmatch("[^\r\n]+") do
+      vim.notify("   " .. line, vim.log.levels.INFO)
+    end
+  else
+    vim.notify("ℹ️  No hay procesos gdbserver corriendo", vim.log.levels.INFO)
+  end
+
+  -- Verificar puertos en escucha
+  vim.notify("🔌 Verificando puertos en escucha...", vim.log.levels.INFO)
+  local port_check = build_ssh_command("ss -tuln | grep LISTEN")
+  local ports = vim.fn.system(port_check)
+  if ports:find(":" .. gdb_port) then
+    vim.notify("✅ Puerto " .. gdb_port .. " está en escucha", vim.log.levels.INFO)
+  else
+    vim.notify("ℹ️  Puerto " .. gdb_port .. " NO está en escucha", vim.log.levels.INFO)
+  end
+
+  vim.notify("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+  vim.notify("✅ Diagnóstico completado", vim.log.levels.INFO)
+end, { desc = "Diagnóstico de debugging remoto" })
 
 return {}
