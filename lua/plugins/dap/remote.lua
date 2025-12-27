@@ -234,6 +234,7 @@ end
 local function get_gdb_setup_commands()
   return {
     { text = "set sysroot remote:/" }, -- Buscar librerías en el sistema remoto
+    { text = "set substitute-path /home/parallels /home/vboxuser" }, -- Mapear rutas de compilación remota a rutas locales
     { text = "-enable-pretty-printing" },
     { text = "set pagination off" },
     { text = "set print pretty on" },
