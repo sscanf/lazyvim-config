@@ -66,9 +66,17 @@ return {
     end
     dap.listeners.before.event_terminated["dapui_config"] = function()
       dapui.close()
+      -- Cerrar también la ventana de logs remotos
+      if _G.close_remote_output_window then
+        _G.close_remote_output_window()
+      end
     end
     dap.listeners.before.event_exited["dapui_config"] = function()
       dapui.close()
+      -- Cerrar también la ventana de logs remotos
+      if _G.close_remote_output_window then
+        _G.close_remote_output_window()
+      end
     end
 
     -- Verificar que la configuración se aplica correctamente
