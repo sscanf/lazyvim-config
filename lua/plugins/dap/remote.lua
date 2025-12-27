@@ -269,7 +269,6 @@ local function create_base_dap_config()
   if pretty_printer_path ~= "" then
     table.insert(config.setupCommands, { text = "set auto-load safe-path /", ignoreFailures = true })
     table.insert(config.setupCommands, { text = "set auto-load yes", ignoreFailures = true })
-    table.insert(config.setupCommands, { text = "set sysroot remote:/", ignoreFailures = false })
     table.insert(config.setupCommands, { text = "python sys.path.insert(0, '" .. pretty_printer_path .. "')" })
     table.insert(
       config.setupCommands,
@@ -584,7 +583,7 @@ function _G.dap_remote_debug()
       target.miDebuggerServerAddress = (os.getenv("REMOTE_SSH_HOST")) .. ":" .. gdb_port
       target.console = "integratedTerminal"
       target.externalConsole = true
-      target.setupCommands = get_gdb_setup_commands()
+      -- setupCommands ya vienen de create_base_dap_config() con todos los comandos necesarios
       target.logging = { engineLogging = true, trace = true }
 
       -- Preparar archivos remotos
@@ -740,6 +739,28 @@ end, { desc = "Estado del monitoreo remoto" })
 
 vim.keymap.set("n", "<leader>dC", ":DapCleanupMonitor<CR>", { desc = "Cleanup Debug Monitor" })
 vim.keymap.set("n", "<leader>dM", ":DapMonitorStatus<CR>", { desc = "Monitor Status" })
+
+-- Show GDB setup commands
+vim.api.nvim_create_user_command("DapShowGdbCommands", function()
+  vim.notify("🔧 Comandos GDB que se ejecutarán:", vim.log.levels.INFO)
+  local commands = get_gdb_setup_commands()
+  for i, cmd in ipairs(commands) do
+    vim.notify(string.format("  %d. %s", i, cmd.text), vim.log.levels.INFO)
+  end
+
+  local toolchain_path = os.getenv("OECORE_TARGET_SYSROOT")
+  if toolchain_path and toolchain_path ~= "" then
+    vim.notify("", vim.log.levels.INFO)
+    vim.notify("📚 Pretty printers detectados:", vim.log.levels.INFO)
+    vim.notify("  - set auto-load safe-path /", vim.log.levels.INFO)
+    vim.notify("  - set auto-load yes", vim.log.levels.INFO)
+    vim.notify("  - python sys.path.insert(0, '" .. toolchain_path .. "/usr/lib/cmake/ZOne/tools/gdb')", vim.log.levels.INFO)
+    vim.notify("  - python import zo_pretty_printers...", vim.log.levels.INFO)
+  else
+    vim.notify("", vim.log.levels.INFO)
+    vim.notify("⚠️  No se detectó OECORE_TARGET_SYSROOT, pretty printers no disponibles", vim.log.levels.WARN)
+  end
+end, { desc = "Mostrar comandos GDB que se ejecutarán" })
 
 -- Diagnostic command
 vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
