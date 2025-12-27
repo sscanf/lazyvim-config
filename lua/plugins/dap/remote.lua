@@ -228,6 +228,65 @@ _G.close_remote_output_window = function()
 end
 
 -- ============================================================================
+-- CMAKE INSTALL PATHS PARSING
+-- ============================================================================
+
+-- Extrae la ruta de instalación de un target desde un CMakeLists.txt
+local function get_install_destination(cmake_file, target_pattern)
+  if vim.fn.filereadable(cmake_file) ~= 1 then
+    return nil
+  end
+
+  local content = table.concat(vim.fn.readfile(cmake_file), "\n")
+  -- Buscar: install(TARGETS ... DESTINATION /path/to/dest)
+  local pattern = "install%s*%(.-TARGETS%s+" .. (target_pattern or "[%w_%-]+") .. ".-DESTINATION%s+([%S]+)%s*%)"
+  local destination = content:match(pattern)
+
+  return destination
+end
+
+-- Obtiene la ruta de instalación del ejecutable principal
+local function get_executable_install_path()
+  local source_dir = get_cmake_cache_var("CMAKE_SOURCE_DIR")
+  if not source_dir then
+    return "/usr/bin" -- Fallback si no se encuentra
+  end
+
+  local manager_cmake = source_dir .. "/manager/CMakeLists.txt"
+  local install_path = get_install_destination(manager_cmake, "${PROJECT_NAME}")
+
+  return install_path or "/usr/bin"
+end
+
+-- Obtiene la ruta de instalación de los plugins .so
+local function get_plugin_install_path()
+  local source_dir = get_cmake_cache_var("CMAKE_SOURCE_DIR")
+  if not source_dir then
+    return "/usr/lib/zone/zovideo/" -- Fallback si no se encuentra
+  end
+
+  -- Buscar en todos los plugins
+  local plugins_dir = source_dir .. "/plugins"
+  local plugin_dirs = vim.fn.globpath(plugins_dir, "*", false, true)
+
+  for _, plugin_dir in ipairs(plugin_dirs) do
+    if vim.fn.isdirectory(plugin_dir) == 1 then
+      local plugin_cmake = plugin_dir .. "/CMakeLists.txt"
+      local install_path = get_install_destination(plugin_cmake)
+      if install_path then
+        -- Asegurar que termina con /
+        if not install_path:match("/$") then
+          install_path = install_path .. "/"
+        end
+        return install_path
+      end
+    end
+  end
+
+  return "/usr/lib/zone/zovideo/" -- Fallback
+end
+
+-- ============================================================================
 -- GDB CONFIGURATION
 -- ============================================================================
 
@@ -331,8 +390,9 @@ local function ensure_remote_program()
   local so_files = vim.fn.globpath(build_dir .. "/plugins", "**/*.so", false, true)
 
   if #so_files > 0 then
-    -- Los plugins van a /usr/lib/zone/zovideo/ en el sistema remoto
-    local plugin_path = "/usr/lib/zone/zovideo/"
+    -- Obtener ruta de instalación de plugins desde CMakeLists.txt
+    local plugin_path = get_plugin_install_path()
+    vim.notify(string.format("📦 Ruta de plugins detectada: %s", plugin_path), vim.log.levels.INFO)
 
     -- Crear directorio de plugins si no existe
     local mk_plugin_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(plugin_path))))
@@ -361,8 +421,11 @@ end
 -- ============================================================================
 
 local function create_gdbserver_script(script_file, gdb_port, rprog, args)
-  -- Configurar LD_LIBRARY_PATH para cargar plugins desde /usr/lib/zone/zovideo/
-  local plugin_path = "/usr/lib/zone/zovideo"
+  -- Obtener ruta de plugins desde CMakeLists.txt y configurar LD_LIBRARY_PATH
+  local plugin_path = get_plugin_install_path()
+  -- Remover trailing slash si existe (LD_LIBRARY_PATH no lo necesita)
+  plugin_path = plugin_path:gsub("/$", "")
+
   local gdb_command = string.format(
     "export LD_LIBRARY_PATH=%s:$LD_LIBRARY_PATH && gdbserver :%s %s %s",
     plugin_path,
@@ -845,6 +908,21 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   else
     vim.notify("❌ Conexión SSH fallida: " .. result, vim.log.levels.ERROR)
     return
+  end
+
+  -- Rutas de instalación detectadas desde CMakeLists.txt
+  vim.notify("📂 Rutas de instalación detectadas:", vim.log.levels.INFO)
+  local exe_install_path = get_executable_install_path()
+  local plugin_install_path = get_plugin_install_path()
+  vim.notify(string.format("   Ejecutable: %s", exe_install_path), vim.log.levels.INFO)
+  vim.notify(string.format("   Plugins:    %s", plugin_install_path), vim.log.levels.INFO)
+
+  local deploy_path = get_cmake_cache_var("DEPLOY_REMOTE_PATH")
+  if deploy_path then
+    vim.notify(string.format("   Deploy:     %s", deploy_path), vim.log.levels.INFO)
+    if deploy_path == "/usr/bin/" or deploy_path == exe_install_path then
+      vim.notify("   ⚠️  DEPLOY_REMOTE_PATH debería ser temporal (/tmp/), no la ruta de instalación", vim.log.levels.WARN)
+    end
   end
 
   -- Verificar gdbserver
