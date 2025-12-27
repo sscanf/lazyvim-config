@@ -234,7 +234,6 @@ end
 local function get_gdb_setup_commands()
   return {
     { text = "set sysroot remote:/" }, -- Buscar librerías en el sistema remoto
-    { text = "set substitute-path /home/parallels /home/vboxuser" }, -- Mapear rutas de compilación remota a rutas locales
     { text = "-enable-pretty-printing" },
     { text = "set pagination off" },
     { text = "set print pretty on" },
@@ -316,7 +315,7 @@ local function ensure_remote_program()
     end
   end
 
-  -- Upload y hacer ejecutable
+  -- Upload ejecutable principal y hacer ejecutable
   local scp_code, scp_out = scp_upload(lpath, target)
   if scp_code ~= 0 then
     return nil, "SCP falló: " .. scp_out
@@ -327,6 +326,24 @@ local function ensure_remote_program()
     return nil, "chmod +x falló en el target"
   end
 
+  -- Subir también los plugins .so del directorio de build
+  local build_dir = vim.fn.fnamemodify(lpath, ":h")
+  local so_files = vim.fn.globpath(build_dir .. "/plugins", "**/*.so", false, true)
+
+  if #so_files > 0 then
+    vim.notify(string.format("📦 Subiendo %d plugin(s) .so...", #so_files), vim.log.levels.INFO)
+    for _, so_file in ipairs(so_files) do
+      local so_name = path_basename(so_file)
+      local remote_so = deploy_path .. so_name
+      local so_scp_code, so_scp_out = scp_upload(so_file, remote_so)
+      if so_scp_code ~= 0 then
+        vim.notify(string.format("⚠️  Falló subir %s: %s", so_name, so_scp_out), vim.log.levels.WARN)
+      else
+        vim.notify(string.format("✓ Subido: %s", so_name), vim.log.levels.INFO)
+      end
+    end
+  end
+
   return target, nil
 end
 
@@ -335,7 +352,15 @@ end
 -- ============================================================================
 
 local function create_gdbserver_script(script_file, gdb_port, rprog, args)
-  local gdb_command = string.format("gdbserver :%s %s %s", gdb_port, rprog, table.concat(args, " "))
+  -- Configurar LD_LIBRARY_PATH para cargar plugins desde el directorio de deploy
+  local deploy_path = get_cmake_cache_var("DEPLOY_REMOTE_PATH") or "/tmp/"
+  local gdb_command = string.format(
+    "LD_LIBRARY_PATH=%s:$LD_LIBRARY_PATH gdbserver :%s %s %s",
+    deploy_path,
+    gdb_port,
+    rprog,
+    table.concat(args, " ")
+  )
   local create_script = string.format(
     "cat > %s << 'EOFSCRIPT'\n#!/bin/bash\nstdbuf -oL -eL %s\nEOFSCRIPT\nchmod +x %s",
     shell_quote(script_file),
@@ -755,7 +780,10 @@ vim.api.nvim_create_user_command("DapShowGdbCommands", function()
     vim.notify("📚 Pretty printers detectados:", vim.log.levels.INFO)
     vim.notify("  - set auto-load safe-path /", vim.log.levels.INFO)
     vim.notify("  - set auto-load yes", vim.log.levels.INFO)
-    vim.notify("  - python sys.path.insert(0, '" .. toolchain_path .. "/usr/lib/cmake/ZOne/tools/gdb')", vim.log.levels.INFO)
+    vim.notify(
+      "  - python sys.path.insert(0, '" .. toolchain_path .. "/usr/lib/cmake/ZOne/tools/gdb')",
+      vim.log.levels.INFO
+    )
     vim.notify("  - python import zo_pretty_printers...", vim.log.levels.INFO)
   else
     vim.notify("", vim.log.levels.INFO)
