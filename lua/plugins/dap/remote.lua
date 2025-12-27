@@ -331,10 +331,19 @@ local function ensure_remote_program()
   local so_files = vim.fn.globpath(build_dir .. "/plugins", "**/*.so", false, true)
 
   if #so_files > 0 then
+    -- Los plugins van a /usr/lib/zone/zovideo/ en el sistema remoto
+    local plugin_path = "/usr/lib/zone/zovideo/"
+
+    -- Crear directorio de plugins si no existe
+    local mk_plugin_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(plugin_path))))
+    if mk_plugin_code ~= 0 then
+      vim.notify("⚠️  No se pudo crear directorio de plugins", vim.log.levels.WARN)
+    end
+
     vim.notify(string.format("📦 Subiendo %d plugin(s) .so...", #so_files), vim.log.levels.INFO)
     for _, so_file in ipairs(so_files) do
       local so_name = path_basename(so_file)
-      local remote_so = deploy_path .. so_name
+      local remote_so = plugin_path .. so_name
       local so_scp_code, so_scp_out = scp_upload(so_file, remote_so)
       if so_scp_code ~= 0 then
         vim.notify(string.format("⚠️  Falló subir %s: %s", so_name, so_scp_out), vim.log.levels.WARN)
@@ -352,11 +361,11 @@ end
 -- ============================================================================
 
 local function create_gdbserver_script(script_file, gdb_port, rprog, args)
-  -- Configurar LD_LIBRARY_PATH para cargar plugins desde el directorio de deploy
-  local deploy_path = get_cmake_cache_var("DEPLOY_REMOTE_PATH") or "/tmp/"
+  -- Configurar LD_LIBRARY_PATH para cargar plugins desde /usr/lib/zone/zovideo/
+  local plugin_path = "/usr/lib/zone/zovideo"
   local gdb_command = string.format(
-    "LD_LIBRARY_PATH=%s:$LD_LIBRARY_PATH gdbserver :%s %s %s",
-    deploy_path,
+    "export LD_LIBRARY_PATH=%s:$LD_LIBRARY_PATH && gdbserver :%s %s %s",
+    plugin_path,
     gdb_port,
     rprog,
     table.concat(args, " ")
@@ -379,8 +388,9 @@ local function create_gdbserver_script(script_file, gdb_port, rprog, args)
 end
 
 local function start_gdbserver(script_file, output_file, gdb_port)
+  -- BusyBox compatible: ps sin opciones, PID está en columna 1
   local kill_cmd = string.format(
-    "ps aux | grep 'gdbserver :%s' | grep -v grep | awk '{print $2}' | xargs -r kill -9 2>/dev/null || true",
+    "ps | grep 'gdbserver :%s' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null || true",
     gdb_port
   )
 
@@ -409,8 +419,8 @@ local function start_gdbserver(script_file, output_file, gdb_port)
 end
 
 local function verify_gdbserver(gdb_port, output_file)
-  -- Verificar proceso
-  local check_cmd = build_ssh_command("ps aux | grep 'gdbserver :" .. gdb_port .. "' | grep -v grep")
+  -- Verificar proceso (BusyBox compatible)
+  local check_cmd = build_ssh_command("ps | grep 'gdbserver :" .. gdb_port .. "' | grep -v grep")
   local check_result = vim.fn.system(check_cmd)
 
   if vim.v.shell_error ~= 0 or check_result == "" then
@@ -848,9 +858,9 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
     vim.notify("💡 Instala con: ssh root@" .. host .. " 'apt-get install gdbserver'", vim.log.levels.INFO)
   end
 
-  -- Procesos activos
+  -- Procesos activos (BusyBox compatible)
   vim.notify("🔍 Buscando procesos gdbserver...", vim.log.levels.INFO)
-  local ps_check = build_ssh_command("ps aux | grep gdbserver | grep -v grep")
+  local ps_check = build_ssh_command("ps | grep gdbserver | grep -v grep")
   local ps_result = vim.fn.system(ps_check)
   if vim.v.shell_error == 0 and ps_result ~= "" then
     vim.notify("⚙️  Procesos gdbserver activos:", vim.log.levels.INFO)
