@@ -139,6 +139,25 @@ end
 
 -- Función para abrir la ventana de logs de deploy
 local function open_deploy_console()
+  -- Verificar si la ventana ya está abierta
+  if deploy_log_window and vim.api.nvim_win_is_valid(deploy_log_window) then
+    -- La ventana ya existe, no crear otra
+    -- Solo limpiar el buffer si es necesario
+    if deploy_log_buffer and vim.api.nvim_buf_is_valid(deploy_log_buffer) then
+      vim.api.nvim_buf_set_lines(deploy_log_buffer, 0, -1, false, {})
+      -- Agregar header
+      local header = {
+        "═══════════════════════════════════════════════════════════",
+        "   REMOTE DEPLOYMENT LOGS",
+        "═══════════════════════════════════════════════════════════",
+        ""
+      }
+      vim.api.nvim_buf_set_lines(deploy_log_buffer, 0, 0, false, header)
+    end
+    return
+  end
+
+  -- Crear buffer si no existe
   if deploy_log_buffer and vim.api.nvim_buf_is_valid(deploy_log_buffer) then
     -- Limpiar buffer anterior
     vim.api.nvim_buf_set_lines(deploy_log_buffer, 0, -1, false, {})
@@ -151,7 +170,7 @@ local function open_deploy_console()
     vim.api.nvim_buf_set_option(deploy_log_buffer, 'filetype', 'dap-console')
   end
 
-  -- Abrir ventana en la parte inferior
+  -- Abrir ventana en la parte inferior (solo si no existe)
   vim.cmd('botright 15split')
   deploy_log_window = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(deploy_log_window, deploy_log_buffer)
