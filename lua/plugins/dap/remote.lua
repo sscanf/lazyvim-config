@@ -628,6 +628,88 @@ end
 -- REMOTE PROGRAM DEPLOYMENT
 -- ============================================================================
 
+-- Helper function to upload config directories (defined first for use by ensure_remote_program_async)
+local function upload_config_directories(target, final_callback)
+  local additional_dirs = get_additional_install_dirs()
+  if #additional_dirs == 0 then
+    log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+    log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+    log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+    final_callback(target, nil)
+    return
+  end
+
+  log_to_console(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
+
+  local dir_index = 1
+  local function upload_next_directory()
+    if dir_index > #additional_dirs then
+      -- All directories uploaded
+      log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+      log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+      log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+      final_callback(target, nil)
+      return
+    end
+
+    local dir_info = additional_dirs[dir_index]
+    local source_dir = dir_info.source
+    local dest_dir = dir_info.destination
+    dir_index = dir_index + 1
+
+    log_to_console(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
+
+    if vim.fn.isdirectory(source_dir) ~= 1 then
+      log_to_console(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
+      upload_next_directory()
+      return
+    end
+
+    log_to_console(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
+    run_remote_async(string.format("mkdir -p %s", shell_quote(dest_dir)), function(mk_code, _)
+      if mk_code ~= 0 then
+        log_to_console(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
+        upload_next_directory()
+        return
+      end
+
+      -- Validate dangerous directories
+      local dangerous_dirs = { "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/lib", "/usr/lib" }
+      for _, danger_dir in ipairs(dangerous_dirs) do
+        if dest_dir == danger_dir or dest_dir == danger_dir .. "/" then
+          log_to_console(
+            string.format("❌ PELIGRO: No se permite copiar directorios a %s (ruta crítica del sistema)", dest_dir),
+            vim.log.levels.ERROR
+          )
+          upload_next_directory()
+          return
+        end
+      end
+
+      -- rsync directory
+      local remote_host = os.getenv("REMOTE_SSH_HOST")
+      log_to_console(
+        string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir),
+        vim.log.levels.INFO
+      )
+
+      rsync_async(source_dir, dest_dir, function(rsync_code, _)
+        if rsync_code == 0 then
+          log_to_console(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
+        else
+          log_to_console(
+            string.format("⚠️  Falló sincronizar %s (code: %d)", path_basename(source_dir), rsync_code),
+            vim.log.levels.WARN
+          )
+        end
+        upload_next_directory()
+      end)
+    end)
+  end
+
+  upload_next_directory()
+end
+
 -- Asynchronous version with callbacks
 local function ensure_remote_program_async(final_callback)
   -- Abrir consola de logs al iniciar deploy
@@ -743,88 +825,6 @@ local function ensure_remote_program_async(final_callback)
       end)
     end)
   end)
-end
-
--- Helper function to upload config directories
-local function upload_config_directories(target, final_callback)
-  local additional_dirs = get_additional_install_dirs()
-  if #additional_dirs == 0 then
-    log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-    log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
-    log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-    final_callback(target, nil)
-    return
-  end
-
-  log_to_console(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
-
-  local dir_index = 1
-  local function upload_next_directory()
-    if dir_index > #additional_dirs then
-      -- All directories uploaded
-      log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-      log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
-      log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-      final_callback(target, nil)
-      return
-    end
-
-    local dir_info = additional_dirs[dir_index]
-    local source_dir = dir_info.source
-    local dest_dir = dir_info.destination
-    dir_index = dir_index + 1
-
-    log_to_console(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
-
-    if vim.fn.isdirectory(source_dir) ~= 1 then
-      log_to_console(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
-      upload_next_directory()
-      return
-    end
-
-    log_to_console(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
-    run_remote_async(string.format("mkdir -p %s", shell_quote(dest_dir)), function(mk_code, _)
-      if mk_code ~= 0 then
-        log_to_console(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
-        upload_next_directory()
-        return
-      end
-
-      -- Validate dangerous directories
-      local dangerous_dirs = { "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/lib", "/usr/lib" }
-      for _, danger_dir in ipairs(dangerous_dirs) do
-        if dest_dir == danger_dir or dest_dir == danger_dir .. "/" then
-          log_to_console(
-            string.format("❌ PELIGRO: No se permite copiar directorios a %s (ruta crítica del sistema)", dest_dir),
-            vim.log.levels.ERROR
-          )
-          upload_next_directory()
-          return
-        end
-      end
-
-      -- rsync directory
-      local remote_host = os.getenv("REMOTE_SSH_HOST")
-      log_to_console(
-        string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir),
-        vim.log.levels.INFO
-      )
-
-      rsync_async(source_dir, dest_dir, function(rsync_code, _)
-        if rsync_code == 0 then
-          log_to_console(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
-        else
-          log_to_console(
-            string.format("⚠️  Falló sincronizar %s (code: %d)", path_basename(source_dir), rsync_code),
-            vim.log.levels.WARN
-          )
-        end
-        upload_next_directory()
-      end)
-    end)
-  end
-
-  upload_next_directory()
 end
 
 -- Synchronous version (kept for compatibility)
