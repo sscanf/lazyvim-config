@@ -286,6 +286,42 @@ local function get_plugin_install_path()
   return "/usr/lib/zone/zovideo/" -- Fallback
 end
 
+-- Obtiene directorios adicionales para deploy desde install(DIRECTORY ...)
+local function get_additional_install_dirs()
+  local source_dir = get_cmake_cache_var("CMAKE_SOURCE_DIR")
+  if not source_dir then
+    return {}
+  end
+
+  local manager_cmake = source_dir .. "/manager/CMakeLists.txt"
+  if vim.fn.filereadable(manager_cmake) ~= 1 then
+    return {}
+  end
+
+  local content = table.concat(vim.fn.readfile(manager_cmake), "\n")
+  local dirs = {}
+
+  -- Buscar: install(DIRECTORY ... DESTINATION ...)
+  for install_line in content:gmatch("install%s*%(.-DIRECTORY.-DESTINATION[^%)]+%)") do
+    local source_path = install_line:match("DIRECTORY%s+([^%s]+)")
+    local dest_path = install_line:match("DESTINATION%s+([^%s%)]+)")
+
+    if source_path and dest_path then
+      -- Expandir ${CMAKE_CURRENT_SOURCE_DIR}
+      source_path = source_path:gsub("%${CMAKE_CURRENT_SOURCE_DIR}", source_dir .. "/manager")
+      -- Remover trailing slash si existe
+      source_path = source_path:gsub("/$", "")
+
+      table.insert(dirs, {
+        source = source_path,
+        destination = dest_path,
+      })
+    end
+  end
+
+  return dirs
+end
+
 -- ============================================================================
 -- GDB CONFIGURATION
 -- ============================================================================
@@ -434,6 +470,46 @@ local function ensure_remote_program()
         vim.notify(string.format("⚠️  Falló subir %s: %s", so_name, so_scp_out), vim.log.levels.WARN)
       else
         vim.notify(string.format("✓ Subido: %s", so_name), vim.log.levels.INFO)
+      end
+    end
+  end
+
+  -- Subir directorios adicionales (config files, dbus, etc.)
+  local additional_dirs = get_additional_install_dirs()
+  if #additional_dirs > 0 then
+    vim.notify(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
+
+    for _, dir_info in ipairs(additional_dirs) do
+      local source_dir = dir_info.source
+      local dest_dir = dir_info.destination
+
+      -- Verificar que el directorio fuente existe
+      if vim.fn.isdirectory(source_dir) == 1 then
+        -- Crear directorio destino si no existe
+        local mk_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(dest_dir))))
+        if mk_code ~= 0 then
+          vim.notify(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
+        else
+          -- Usar rsync para subir el contenido del directorio
+          local rsync_cmd = string.format(
+            "rsync -az --delete -e 'sshpass -e ssh -p %s -o StrictHostKeyChecking=no' %s/ root@%s:%s/",
+            os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT,
+            shell_quote(source_dir),
+            os.getenv("REMOTE_SSH_HOST"),
+            dest_dir
+          )
+          local rsync_result = vim.fn.system(rsync_cmd)
+          if vim.v.shell_error == 0 then
+            vim.notify(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
+          else
+            vim.notify(
+              string.format("⚠️  Falló sincronizar %s: %s", path_basename(source_dir), rsync_result),
+              vim.log.levels.WARN
+            )
+          end
+        end
+      else
+        vim.notify(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
       end
     end
   end
@@ -994,6 +1070,15 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   local plugin_install_path = get_plugin_install_path()
   vim.notify(string.format("   Ejecutable: %s", exe_install_path), vim.log.levels.INFO)
   vim.notify(string.format("   Plugins:    %s", plugin_install_path), vim.log.levels.INFO)
+
+  -- Mostrar directorios adicionales
+  local additional_dirs = get_additional_install_dirs()
+  if #additional_dirs > 0 then
+    vim.notify(string.format("   Directorios de config: %d detectados", #additional_dirs), vim.log.levels.INFO)
+    for _, dir_info in ipairs(additional_dirs) do
+      vim.notify(string.format("      • %s -> %s", path_basename(dir_info.source), dir_info.destination), vim.log.levels.INFO)
+    end
+  end
 
   local deploy_path = get_cmake_cache_var("DEPLOY_REMOTE_PATH")
   if deploy_path then
