@@ -22,9 +22,22 @@ return {
     })
 
     -- Create CMakeDeploy command
-    vim.api.nvim_create_user_command("CMakeDeploy", function()
-      vim.cmd("CMakeBuild deploy")
-    end, {})
+    vim.api.nvim_create_user_command("CMakeDeploy", function(opts)
+      -- Si se pasa el argumento 'build', compilar primero
+      if opts.args == "build" then
+        vim.notify("🔨 Compilando proyecto...", vim.log.levels.INFO)
+        vim.cmd("CMakeBuild")
+        vim.notify("⏳ Espera a que termine la compilación y ejecuta :CMakeDeploy de nuevo", vim.log.levels.INFO)
+        return
+      end
+
+      -- Hacer deploy remoto
+      if _G.deploy_remote_program then
+        _G.deploy_remote_program()
+      else
+        vim.notify("❌ Función de deploy no disponible. ¿Cargaste remote.lua?", vim.log.levels.ERROR)
+      end
+    end, { nargs = "?", desc = "Desplegar a sistema remoto (usa 'build' para compilar primero)" })
 
     -- Automatically run CMakeDeploy before remote debugging
     -- This listener triggers when attaching to a debug session
