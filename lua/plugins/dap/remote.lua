@@ -183,6 +183,7 @@ _G.close_deploy_console = function()
   end
 end
 
+-- Synchronous version (kept for compatibility)
 local function run_remote(cmd)
   local ssh_cmd = build_ssh_command(cmd)
   if not ssh_cmd then
@@ -193,6 +194,46 @@ local function run_remote(cmd)
   return code, table.concat(out, "\n")
 end
 
+-- Asynchronous version with callback
+local function run_remote_async(cmd, callback)
+  local ssh_cmd = build_ssh_command(cmd)
+  if not ssh_cmd then
+    callback(1, "Error building ssh command")
+    return
+  end
+
+  local stdout_data = {}
+  local stderr_data = {}
+
+  vim.fn.jobstart(ssh_cmd, {
+    on_stdout = function(_, data, _)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stdout_data, line)
+          end
+        end
+      end
+    end,
+    on_stderr = function(_, data, _)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stderr_data, line)
+            log_to_console("  " .. line, vim.log.levels.DEBUG)
+          end
+        end
+      end
+    end,
+    on_exit = function(_, exit_code, _)
+      local output = table.concat(stdout_data, "\n")
+      local err_output = table.concat(stderr_data, "\n")
+      callback(exit_code, output, err_output)
+    end,
+  })
+end
+
+-- Synchronous version (kept for compatibility)
 local function scp_upload(local_path, remote_path)
   local host = os.getenv("REMOTE_SSH_HOST")
   local port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
@@ -208,6 +249,99 @@ local function scp_upload(local_path, remote_path)
   )
   local out = vim.fn.systemlist(scp_cmd)
   return vim.v.shell_error, table.concat(out, "\n")
+end
+
+-- Asynchronous version with callback and progress
+local function scp_upload_async(local_path, remote_path, callback)
+  local host = os.getenv("REMOTE_SSH_HOST")
+  local port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
+  if not host then
+    callback(1, "REMOTE_SSH_HOST no definida")
+    return
+  end
+
+  local scp_cmd = string.format(
+    "sshpass -e scp -P %s -o StrictHostKeyChecking=no %s root@%s:%s",
+    port,
+    shell_quote(local_path),
+    host,
+    shell_quote(remote_path)
+  )
+
+  local stdout_data = {}
+  local stderr_data = {}
+
+  vim.fn.jobstart(scp_cmd, {
+    on_stdout = function(_, data, _)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stdout_data, line)
+          end
+        end
+      end
+    end,
+    on_stderr = function(_, data, _)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stderr_data, line)
+          end
+        end
+      end
+    end,
+    on_exit = function(_, exit_code, _)
+      local output = table.concat(stdout_data, "\n")
+      callback(exit_code, output)
+    end,
+  })
+end
+
+-- Asynchronous rsync with real-time output
+local function rsync_async(source_dir, dest_dir, callback)
+  local remote_port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
+  local remote_host = os.getenv("REMOTE_SSH_HOST")
+
+  local rsync_cmd = string.format(
+    "rsync -avz -e 'sshpass -e ssh -p %s -o StrictHostKeyChecking=no' '%s/' root@%s:'%s/'",
+    remote_port,
+    source_dir,
+    remote_host,
+    dest_dir
+  )
+
+  local stdout_data = {}
+  local stderr_data = {}
+
+  vim.fn.jobstart(rsync_cmd, {
+    on_stdout = function(_, data, _)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stdout_data, line)
+            -- Show rsync progress in real-time
+            if line:match("^sending") or line:match("^sent") or line:match("^total size") then
+              log_to_console("    " .. line, vim.log.levels.DEBUG)
+            end
+          end
+        end
+      end
+    end,
+    on_stderr = function(_, data, _)
+      if data then
+        for _, line in ipairs(data) do
+          if line ~= "" then
+            table.insert(stderr_data, line)
+            log_to_console("    ⚠️  " .. line, vim.log.levels.WARN)
+          end
+        end
+      end
+    end,
+    on_exit = function(_, exit_code, _)
+      local output = table.concat(stdout_data, "\n")
+      callback(exit_code, output)
+    end,
+  })
 end
 
 -- ============================================================================
@@ -494,6 +628,206 @@ end
 -- REMOTE PROGRAM DEPLOYMENT
 -- ============================================================================
 
+-- Asynchronous version with callbacks
+local function ensure_remote_program_async(final_callback)
+  -- Abrir consola de logs al iniciar deploy
+  open_deploy_console()
+
+  local lpath = os.getenv("LOCAL_PROGRAM_PATH")
+  if not lpath or vim.fn.filereadable(lpath) ~= 1 then
+    log_to_console("❌ LOCAL_PROGRAM_PATH no existe o no es legible", vim.log.levels.ERROR)
+    final_callback(nil, "LOCAL_PROGRAM_PATH no existe o no es legible")
+    return
+  end
+
+  -- Usar ruta de instalación desde CMakeLists.txt
+  local exe_install_path = get_executable_install_path()
+  if not exe_install_path:match("/$") then
+    exe_install_path = exe_install_path .. "/"
+  end
+
+  local base = path_basename(lpath)
+  local target = exe_install_path .. base
+
+  log_to_console(string.format("📦 Ruta ejecutable detectada: %s", exe_install_path), vim.log.levels.INFO)
+
+  -- Step 1: Create remote directory
+  run_remote_async(string.format("mkdir -p %s", shell_quote(exe_install_path)), function(code, _)
+    if code ~= 0 then
+      log_to_console("❌ No se pudo crear directorio remoto", vim.log.levels.ERROR)
+      final_callback(nil, "No se pudo crear " .. exe_install_path)
+      return
+    end
+
+    -- Step 2: Upload executable
+    log_to_console(string.format("📦 Subiendo ejecutable: %s -> %s", base, target), vim.log.levels.INFO)
+    scp_upload_async(lpath, target, function(scp_code, scp_out)
+      if scp_code ~= 0 then
+        log_to_console(string.format("❌ SCP falló: %s", scp_out), vim.log.levels.ERROR)
+        final_callback(nil, "SCP falló: " .. scp_out)
+        return
+      end
+
+      -- Step 3: Make executable
+      run_remote_async(string.format("chmod +x %s", shell_quote(target)), function(ch_code, _)
+        if ch_code ~= 0 then
+          log_to_console("❌ chmod +x falló en el target", vim.log.levels.ERROR)
+          final_callback(nil, "chmod +x falló en el target")
+          return
+        end
+        log_to_console(string.format("✅ Ejecutable desplegado: %s", target), vim.log.levels.INFO)
+
+        -- Step 4: Find and upload plugins
+        local cmake_cache_path = vim.fn.findfile("CMakeCache.txt", lpath .. ";")
+        local build_dir = nil
+
+        if cmake_cache_path ~= "" then
+          build_dir = vim.fn.fnamemodify(cmake_cache_path, ":h")
+        else
+          local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
+          if source_dir then
+            build_dir = source_dir .. "/out/Debug"
+          else
+            build_dir = vim.fn.fnamemodify(lpath, ":h:h")
+          end
+        end
+
+        log_to_console(string.format("🔍 Buscando plugins en: %s/plugins", build_dir), vim.log.levels.INFO)
+
+        local so_files = vim.fn.globpath(build_dir .. "/plugins", "**/*.so", false, true)
+        log_to_console(string.format("🔍 Encontrados %d archivo(s) .so", #so_files), vim.log.levels.INFO)
+
+        if #so_files > 0 then
+          local plugin_path = get_plugin_install_path()
+          log_to_console(string.format("📦 Ruta de plugins detectada: %s", plugin_path), vim.log.levels.INFO)
+
+          -- Create plugin directory
+          run_remote_async(string.format("mkdir -p %s", shell_quote(plugin_path)), function(mk_code, _)
+            if mk_code ~= 0 then
+              log_to_console("⚠️  No se pudo crear directorio de plugins", vim.log.levels.WARN)
+            end
+
+            log_to_console(string.format("📦 Subiendo %d plugin(s) .so...", #so_files), vim.log.levels.INFO)
+
+            -- Upload plugins sequentially (could be parallelized)
+            local plugin_index = 1
+            local function upload_next_plugin()
+              if plugin_index > #so_files then
+                -- All plugins uploaded, continue to config directories
+                upload_config_directories(target, final_callback)
+                return
+              end
+
+              local so_file = so_files[plugin_index]
+              local so_name = path_basename(so_file)
+              local remote_so = plugin_path .. so_name
+              plugin_index = plugin_index + 1
+
+              scp_upload_async(so_file, remote_so, function(so_code, so_out)
+                if so_code ~= 0 then
+                  log_to_console(string.format("⚠️  Falló subir %s: %s", so_name, so_out), vim.log.levels.WARN)
+                else
+                  log_to_console(string.format("✓ Subido: %s", so_name), vim.log.levels.INFO)
+                end
+                -- Continue with next plugin
+                upload_next_plugin()
+              end)
+            end
+
+            upload_next_plugin()
+          end)
+        else
+          -- No plugins, go to config directories
+          upload_config_directories(target, final_callback)
+        end
+      end)
+    end)
+  end)
+end
+
+-- Helper function to upload config directories
+local function upload_config_directories(target, final_callback)
+  local additional_dirs = get_additional_install_dirs()
+  if #additional_dirs == 0 then
+    log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+    log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+    log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+    final_callback(target, nil)
+    return
+  end
+
+  log_to_console(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
+
+  local dir_index = 1
+  local function upload_next_directory()
+    if dir_index > #additional_dirs then
+      -- All directories uploaded
+      log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+      log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+      log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+      final_callback(target, nil)
+      return
+    end
+
+    local dir_info = additional_dirs[dir_index]
+    local source_dir = dir_info.source
+    local dest_dir = dir_info.destination
+    dir_index = dir_index + 1
+
+    log_to_console(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
+
+    if vim.fn.isdirectory(source_dir) ~= 1 then
+      log_to_console(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
+      upload_next_directory()
+      return
+    end
+
+    log_to_console(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
+    run_remote_async(string.format("mkdir -p %s", shell_quote(dest_dir)), function(mk_code, _)
+      if mk_code ~= 0 then
+        log_to_console(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
+        upload_next_directory()
+        return
+      end
+
+      -- Validate dangerous directories
+      local dangerous_dirs = { "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/lib", "/usr/lib" }
+      for _, danger_dir in ipairs(dangerous_dirs) do
+        if dest_dir == danger_dir or dest_dir == danger_dir .. "/" then
+          log_to_console(
+            string.format("❌ PELIGRO: No se permite copiar directorios a %s (ruta crítica del sistema)", dest_dir),
+            vim.log.levels.ERROR
+          )
+          upload_next_directory()
+          return
+        end
+      end
+
+      -- rsync directory
+      local remote_host = os.getenv("REMOTE_SSH_HOST")
+      log_to_console(
+        string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir),
+        vim.log.levels.INFO
+      )
+
+      rsync_async(source_dir, dest_dir, function(rsync_code, _)
+        if rsync_code == 0 then
+          log_to_console(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
+        else
+          log_to_console(
+            string.format("⚠️  Falló sincronizar %s (code: %d)", path_basename(source_dir), rsync_code),
+            vim.log.levels.WARN
+          )
+        end
+        upload_next_directory()
+      end)
+    end)
+  end
+
+  upload_next_directory()
+end
+
+-- Synchronous version (kept for compatibility)
 local function ensure_remote_program()
   -- Abrir consola de logs al iniciar deploy
   open_deploy_console()
@@ -913,14 +1247,16 @@ function _G.dap_remote_debug()
     default_exec = string.format("%s/%s", default_exec, project_name)
 
     resolve_program_or_prompt("LOCAL_PROGRAM_PATH", default_exec, function(local_prog)
-      local rprog, err = ensure_remote_program()
-      if not rprog then
-        return vim.notify("❌ " .. err, vim.log.levels.ERROR)
-      end
+      -- Use async version - Neovim won't block during deployment
+      ensure_remote_program_async(function(rprog, err)
+        if not rprog then
+          log_to_console("❌ " .. err, vim.log.levels.ERROR)
+          return vim.notify("❌ " .. err, vim.log.levels.ERROR)
+        end
 
-      -- Crear configuración DAP
-      local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or DEFAULT_GDB_PORT
-      local target = vim.deepcopy(create_base_dap_config())
+        -- Crear configuración DAP
+        local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or DEFAULT_GDB_PORT
+        local target = vim.deepcopy(create_base_dap_config())
 
       target.args = args
       target.program = local_prog
@@ -980,8 +1316,9 @@ function _G.dap_remote_debug()
         -- Iniciar DAP
         dap.run(target)
       end, wait_ms)
-    end)
-  end)
+      end) -- end ensure_remote_program_async callback
+    end) -- end resolve_program_or_prompt callback
+  end) -- end vim.ui.input callback
 end
 
 -- ============================================================================
@@ -1109,11 +1446,13 @@ function _G.deploy_remote_program()
   default_exec = string.format("%s/%s", default_exec, project_name)
 
   resolve_program_or_prompt("LOCAL_PROGRAM_PATH", default_exec, function(local_prog)
-    local rprog, err = ensure_remote_program()
-    if not rprog then
-      log_to_console("❌ " .. err, vim.log.levels.ERROR)
-      return
-    end
+    -- Use async version - Neovim won't block during deployment
+    ensure_remote_program_async(function(rprog, err)
+      if not rprog then
+        log_to_console("❌ " .. err, vim.log.levels.ERROR)
+      end
+      -- Deploy completed (success or failure)
+    end)
   end)
 end
 
