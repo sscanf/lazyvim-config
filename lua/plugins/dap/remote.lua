@@ -357,24 +357,29 @@ local function ensure_remote_program()
     return nil, "LOCAL_PROGRAM_PATH no existe o no es legible"
   end
 
-  local deploy_path = get_cmake_cache_var("DEPLOY_REMOTE_PATH")
-  if not deploy_path or deploy_path == "" then
-    return nil, "DEPLOY_REMOTE_PATH no encontrado en CMake cache"
+  -- Usar ruta de instalación desde CMakeLists.txt
+  local exe_install_path = get_executable_install_path()
+  -- Asegurar que termina con /
+  if not exe_install_path:match("/$") then
+    exe_install_path = exe_install_path .. "/"
   end
 
   local base = path_basename(lpath)
-  local target = string.format("%s%s", deploy_path, base)
+  local target = exe_install_path .. base
+
+  vim.notify(string.format("📦 Ruta ejecutable detectada: %s", exe_install_path), vim.log.levels.INFO)
 
   -- Crear directorio si no existe
-  local exists_code = select(1, run_remote(string.format("test -d %s", shell_quote(deploy_path))))
+  local exists_code = select(1, run_remote(string.format("test -d %s", shell_quote(exe_install_path))))
   if exists_code ~= 0 then
-    local mk_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(deploy_path))))
+    local mk_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(exe_install_path))))
     if mk_code ~= 0 then
-      return nil, "No se pudo crear " .. deploy_path
+      return nil, "No se pudo crear " .. exe_install_path
     end
   end
 
   -- Upload ejecutable principal y hacer ejecutable
+  vim.notify(string.format("📦 Subiendo ejecutable: %s -> %s", base, target), vim.log.levels.INFO)
   local scp_code, scp_out = scp_upload(lpath, target)
   if scp_code ~= 0 then
     return nil, "SCP falló: " .. scp_out
@@ -384,6 +389,7 @@ local function ensure_remote_program()
   if ch_code ~= 0 then
     return nil, "chmod +x falló en el target"
   end
+  vim.notify(string.format("✅ Ejecutable desplegado: %s", target), vim.log.levels.INFO)
 
   -- Subir también los plugins .so del directorio de build
   local build_dir = vim.fn.fnamemodify(lpath, ":h")
@@ -839,6 +845,42 @@ end, { desc = "Estado del monitoreo remoto" })
 
 vim.keymap.set("n", "<leader>dC", ":DapCleanupMonitor<CR>", { desc = "Cleanup Debug Monitor" })
 vim.keymap.set("n", "<leader>dM", ":DapMonitorStatus<CR>", { desc = "Monitor Status" })
+
+-- ============================================================================
+-- PUBLIC DEPLOY FUNCTION
+-- ============================================================================
+
+function _G.deploy_remote_program()
+  -- Cargar variables desde CMakeCache.txt
+  vim.env.SSHPASS = get_cmake_cache_var("REMOTE_SSH_PASS")
+  vim.env.REMOTE_SSH_HOST = get_cmake_cache_var("REMOTE_SSH_HOST")
+
+  -- Verificar variables obligatorias
+  for _, var in ipairs({ "SSHPASS", "REMOTE_SSH_HOST" }) do
+    if not os.getenv(var) then
+      return vim.notify("❌ Variable de entorno no definida: " .. var, vim.log.levels.ERROR)
+    end
+  end
+
+  -- Resolver ejecutable
+  local project_name = get_cmake_cache_var("CMAKE_PROJECT_NAME")
+  local cmake_key = string.format("%s_BINARY_DIR", project_name)
+  local default_exec = get_cmake_cache_var(cmake_key) or ""
+  default_exec = string.format("%s/%s", default_exec, project_name)
+
+  resolve_program_or_prompt("LOCAL_PROGRAM_PATH", default_exec, function(local_prog)
+    vim.notify("🚀 Iniciando deploy remoto...", vim.log.levels.INFO)
+    vim.notify("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+
+    local rprog, err = ensure_remote_program()
+    if not rprog then
+      return vim.notify("❌ " .. err, vim.log.levels.ERROR)
+    end
+
+    vim.notify("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+    vim.notify("✅ Deploy completado exitosamente", vim.log.levels.INFO)
+  end)
+end
 
 -- Show GDB setup commands
 vim.api.nvim_create_user_command("DapShowGdbCommands", function()
