@@ -1063,22 +1063,26 @@ end
 
 local function verify_gdbserver(gdb_port, output_file)
   -- Verificar proceso (BusyBox compatible)
+  log_to_console("🔍 Verificando estado de gdbserver...", vim.log.levels.INFO)
   local check_cmd = build_ssh_command("ps | grep 'gdbserver :" .. gdb_port .. "' | grep -v grep")
   local check_result = vim.fn.system(check_cmd)
 
   if vim.v.shell_error ~= 0 or check_result == "" then
-    vim.notify("⚠️  Gdbserver no está corriendo en el host remoto", vim.log.levels.WARN)
+    log_to_console("⚠️  Gdbserver no está corriendo en el host remoto", vim.log.levels.WARN)
 
     -- Leer output file para ver errores
     local error_check = build_ssh_command("cat " .. shell_quote(output_file) .. " 2>/dev/null | head -20")
     local error_output = vim.fn.system(error_check)
     if error_output ~= "" then
-      vim.notify("📄 Output de gdbserver:\n" .. error_output, vim.log.levels.WARN)
+      log_to_console("📄 Output de gdbserver:", vim.log.levels.WARN)
+      for line in error_output:gmatch("[^\r\n]+") do
+        log_to_console("   " .. line, vim.log.levels.WARN)
+      end
     end
     return false
   end
 
-  vim.notify("✅ Gdbserver está corriendo", vim.log.levels.INFO)
+  log_to_console("✅ Gdbserver está corriendo", vim.log.levels.INFO)
 
   -- Verificar puerto
   local port_check =
@@ -1086,10 +1090,10 @@ local function verify_gdbserver(gdb_port, output_file)
   local port_result = vim.fn.system(port_check)
 
   if vim.v.shell_error ~= 0 or not port_result:match(gdb_port) then
-    vim.notify("⚠️  Puerto " .. gdb_port .. " puede no estar escuchando aún", vim.log.levels.WARN)
-    vim.notify("💡 Esto es normal - gdbserver espera la primera conexión para abrir el puerto", vim.log.levels.INFO)
+    log_to_console("⚠️  Puerto " .. gdb_port .. " puede no estar escuchando aún", vim.log.levels.WARN)
+    log_to_console("💡 Esto es normal - gdbserver espera la primera conexión para abrir el puerto", vim.log.levels.INFO)
   else
-    vim.notify("✅ Puerto " .. gdb_port .. " está escuchando", vim.log.levels.INFO)
+    log_to_console("✅ Puerto " .. gdb_port .. " está escuchando", vim.log.levels.INFO)
   end
 
   return true
@@ -1116,7 +1120,7 @@ function OutputMonitor.setup(output_file)
   end
 
   if os.getenv("DAP_MONITOR_ENABLED") == "false" then
-    vim.notify("ℹ️  Monitoreo remoto deshabilitado", vim.log.levels.INFO)
+    log_to_console("ℹ️  Monitoreo remoto deshabilitado", vim.log.levels.INFO)
     return
   end
 
@@ -1125,7 +1129,7 @@ function OutputMonitor.setup(output_file)
 
   -- Iniciar streaming con tail -f
   local tail_cmd = build_ssh_command("tail -f -n 0 " .. shell_quote(output_file) .. " 2>/dev/null")
-  vim.notify("🔍 Iniciando streaming de salida remota...", vim.log.levels.INFO)
+  log_to_console("🔍 Iniciando streaming de salida remota...", vim.log.levels.INFO)
 
   OutputMonitor.job_id = vim.fn.jobstart(tail_cmd, {
     on_stdout = function(_, lines)
@@ -1219,12 +1223,19 @@ local function resolve_program_or_prompt(envvar, default_path, cb)
 end
 
 function _G.dap_remote_debug()
+  -- Abrir consola de logs
+  open_deploy_console()
+
   -- Cargar variables de CMake
   vim.env.SSHPASS = get_cmake_cache_var("REMOTE_SSH_PASS")
   vim.env.REMOTE_SSH_HOST = get_cmake_cache_var("REMOTE_SSH_HOST")
 
+  log_to_console("🐛 Iniciando sesión de debugging remoto...", vim.log.levels.INFO)
+  log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+
   for _, var in ipairs({ "SSHPASS", "REMOTE_SSH_HOST" }) do
     if not os.getenv(var) then
+      log_to_console("❌ Variable de entorno no definida: " .. var, vim.log.levels.ERROR)
       return vim.notify("❌ Variable de entorno no definida: " .. var, vim.log.levels.ERROR)
     end
   end
@@ -1232,6 +1243,7 @@ function _G.dap_remote_debug()
   -- Solicitar argumentos
   vim.ui.input({ prompt = "Argumentos de ejecución:", default = "" }, function(input_args)
     if input_args == nil then
+      log_to_console("❌ Depuración cancelada", vim.log.levels.WARN)
       return vim.notify("❌ Depuración cancelada", vim.log.levels.WARN)
     end
 
@@ -1273,34 +1285,35 @@ function _G.dap_remote_debug()
       local script_file = output_base .. ".sh"
 
       -- Crear script de gdbserver
-      vim.notify("📝 Preparando gdbserver remoto...", vim.log.levels.INFO)
+      log_to_console("📝 Preparando gdbserver remoto...", vim.log.levels.INFO)
       local gdb_command, create_err = create_gdbserver_script(script_file, gdb_port, rprog, args)
       if not gdb_command then
+        log_to_console("❌ " .. create_err, vim.log.levels.ERROR)
         return vim.notify("❌ " .. create_err, vim.log.levels.ERROR)
       end
 
       -- Iniciar gdbserver
-      vim.notify("🚀 Iniciando gdbserver remoto...", vim.log.levels.INFO)
-      vim.notify("📋 Comando: " .. gdb_command, vim.log.levels.DEBUG)
+      log_to_console("🚀 Iniciando gdbserver remoto...", vim.log.levels.INFO)
+      log_to_console("📋 Comando: " .. gdb_command, vim.log.levels.DEBUG)
 
       local gdbserver_pid, start_err = start_gdbserver(script_file, output_file, gdb_port)
       if not gdbserver_pid then
-        vim.notify("❌ " .. start_err, vim.log.levels.ERROR)
-        vim.notify("💡 Ejecuta :DapRemoteDiagnostic para más información", vim.log.levels.INFO)
+        log_to_console("❌ " .. start_err, vim.log.levels.ERROR)
+        log_to_console("💡 Ejecuta :DapRemoteDiagnostic para más información", vim.log.levels.INFO)
         return
       end
 
-      vim.notify("✅ Gdbserver iniciado (PID: " .. gdbserver_pid .. ")", vim.log.levels.INFO)
-      vim.notify("📁 Output: " .. output_file, vim.log.levels.DEBUG)
+      log_to_console("✅ Gdbserver iniciado (PID: " .. gdbserver_pid .. ")", vim.log.levels.INFO)
+      log_to_console("📁 Output: " .. output_file, vim.log.levels.DEBUG)
 
       -- Esperar a que gdbserver esté listo
       local wait_ms = tonumber(os.getenv("DEBUG_WAIT_TIME")) or DEFAULT_WAIT_TIME
-      vim.notify("⏳ Esperando " .. (wait_ms / 1000) .. " s para que gdbserver escuche...", vim.log.levels.WARN)
+      log_to_console("⏳ Esperando " .. (wait_ms / 1000) .. " s para que gdbserver escuche...", vim.log.levels.INFO)
 
       vim.defer_fn(function()
         verify_gdbserver(gdb_port, output_file)
-        vim.notify("🛰️ Conectando depurador...", vim.log.levels.INFO)
-        vim.notify(
+        log_to_console("🛰️ Conectando depurador...", vim.log.levels.INFO)
+        log_to_console(
           "ℹ️  Si ves 'Cursor position outside buffer', recompila el ejecutable con símbolos de debug (-g)",
           vim.log.levels.INFO
         )
@@ -1312,6 +1325,9 @@ function _G.dap_remote_debug()
         dap.listeners.before.event_terminated["dapui_monitor"] = OutputMonitor.cleanup
         dap.listeners.before.event_exited["dapui_monitor"] = OutputMonitor.cleanup
         dap.listeners.before.disconnect["dapui_monitor"] = OutputMonitor.cleanup
+
+        log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+        log_to_console("✅ Depurador iniciado correctamente", vim.log.levels.INFO)
 
         -- Iniciar DAP
         dap.run(target)
