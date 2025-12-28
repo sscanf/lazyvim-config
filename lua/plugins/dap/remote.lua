@@ -866,6 +866,13 @@ end, { desc = "Mostrar comandos GDB que se ejecutarán" })
 
 -- Diagnostic command
 vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
+  -- Cargar variables desde CMakeCache.txt (como lo hace dap_remote_debug)
+  vim.env.SSHPASS = get_cmake_cache_var("REMOTE_SSH_PASS")
+  vim.env.REMOTE_SSH_HOST = get_cmake_cache_var("REMOTE_SSH_HOST")
+  vim.env.REMOTE_SSH_PORT = get_cmake_cache_var("REMOTE_SSH_PORT")
+  vim.env.REMOTE_GDBSERVER_PORT = get_cmake_cache_var("REMOTE_GDBSERVER_PORT")
+  vim.env.LOCAL_GDB_PATH = os.getenv("GDB")
+
   local host = os.getenv("REMOTE_SSH_HOST")
   local port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
   local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or DEFAULT_GDB_PORT
@@ -875,6 +882,15 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     vim.log.levels.INFO
   )
+
+  -- Mostrar fuente de configuración
+  local cmake_cache = get_cmake_cache_var("CMAKE_CACHEFILE_DIR")
+  if cmake_cache then
+    vim.notify(string.format("📋 Configuración desde: %s/CMakeCache.txt", cmake_cache), vim.log.levels.INFO)
+  else
+    vim.notify("⚠️  No se encontró CMakeCache.txt", vim.log.levels.WARN)
+  end
+  vim.notify("", vim.log.levels.INFO)
 
   -- Verificar variables
   local vars =
