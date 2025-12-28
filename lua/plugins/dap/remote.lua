@@ -67,11 +67,14 @@ end
 -- Helper para logging que funciona antes de que log_to_console esté definida
 local function debug_log(msg, level)
   level = level or vim.log.levels.INFO
-  -- Intentar usar log_to_console si está disponible, sino usar vim.notify
+  -- Intentar usar log_to_console si está disponible, sino usar vim.notify solo para errores
   if _G.log_to_console then
     _G.log_to_console(msg, level)
   else
-    vim.notify(msg, level)
+    -- Solo mostrar notificaciones para errores y warnings
+    if level == vim.log.levels.ERROR or level == vim.log.levels.WARN then
+      vim.notify(msg, level)
+    end
   end
 end
 
@@ -201,8 +204,10 @@ local deploy_log_window = nil
 _G.log_to_console = function(message, level)
   level = level or vim.log.levels.INFO
 
-  -- También enviar a vim.notify para compatibilidad
-  vim.notify(message, level)
+  -- Solo mostrar notificaciones para errores y warnings
+  if level == vim.log.levels.ERROR or level == vim.log.levels.WARN then
+    vim.notify(message, level)
+  end
 
   -- Intentar escribir en la consola de DAP UI
   local ok, dapui = pcall(require, "dapui")
