@@ -169,13 +169,16 @@ LazyVim will automatically install all plugins on first launch.
 
 ## 🐛 Remote Debugging
 
-This configuration includes advanced remote debugging capabilities for C/C++ development, perfect for embedded systems or remote servers.
+This configuration includes advanced remote debugging capabilities for C/C++ development, perfect for embedded systems or remote servers. All deployment paths are **automatically extracted from CMakeLists.txt** - no manual configuration needed!
 
 ### How It Works
 
-1. **Build locally** with CMake
-2. **Deploy automatically** to remote host via SSH/SCP
-3. **Start gdbserver** on remote machine
+1. **Build locally** with CMake (`-g` flag for debug symbols)
+2. **Deploy automatically** to remote host:
+   - Executable → `/usr/bin` (from `manager/CMakeLists.txt`)
+   - Plugins (.so) → `/usr/lib/zone/zovideo/` (from `plugins/CMakeLists.txt`)
+   - Config directories → `/etc/zone`, `/etc/dbus-1/system.d`, etc.
+3. **Start gdbserver** on remote machine with correct `LD_LIBRARY_PATH`
 4. **Connect GDB** from Neovim to remote gdbserver
 5. **Monitor output** in real-time from remote stdout/stderr
 
@@ -183,69 +186,174 @@ This configuration includes advanced remote debugging capabilities for C/C++ dev
 
 ```bash
 # On local machine
-sudo apt install sshpass gdb
+sudo apt install sshpass gdb rsync
 
 # On remote machine (target)
 sudo apt install gdbserver
+
+# For BusyBox systems (embedded)
+# gdbserver is usually pre-installed
 ```
 
-### Environment Variables
+### Configuration
 
-Configure these in your CMakeCache.txt or environment:
+#### Option 1: CMakePresets.json (Recommended)
 
-```cmake
-# In CMakeCache.txt or CMakeLists.txt
-set(REMOTE_SSH_HOST "192.168.1.100")
-set(REMOTE_SSH_PORT "22")
-set(REMOTE_SSH_PASS "your_password")
-set(REMOTE_GDBSERVER_PORT "10000")
-set(DEPLOY_REMOTE_PATH "/tmp/debug/")
-set(CMAKE_PROJECT_NAME "your_project_name")
+Create or edit `CMakePresets.json` in your project root:
+
+```json
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "x86_64",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/out/Debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "REMOTE_SSH_HOST": "192.168.1.155",
+        "REMOTE_SSH_PORT": "22",
+        "REMOTE_SSH_PASS": "root",
+        "REMOTE_GDBSERVER_PORT": "10000",
+        "LOCAL_GDB_PATH": "/path/to/gdb"
+      }
+    }
+  ]
+}
 ```
 
-Or export as environment variables:
+#### Option 2: Environment Variables
 
 ```bash
-export REMOTE_SSH_HOST="192.168.1.100"
+export REMOTE_SSH_HOST="192.168.1.155"
 export REMOTE_SSH_PORT="22"
 export SSHPASS="your_password"
-export LOCAL_PROGRAM_PATH="/path/to/local/executable"
-export LOCAL_GDB_PATH="/path/to/cross-gdb"
 export REMOTE_GDBSERVER_PORT="10000"
+export LOCAL_GDB_PATH="/usr/bin/gdb"
 ```
+
+#### Install Paths (Automatic from CMakeLists.txt)
+
+The configuration automatically detects installation paths:
+
+```cmake
+# manager/CMakeLists.txt
+install(TARGETS ${PROJECT_NAME} DESTINATION /usr/bin)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/zone/ DESTINATION /etc/zone)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/system.d/ DESTINATION /etc/dbus-1/system.d)
+
+# plugins/*/CMakeLists.txt
+install(TARGETS ${PROJECT_NAME} DESTINATION /usr/lib/zone/zovideo/)
+```
+
+**No manual path configuration needed!** Paths are parsed from CMake files.
 
 ### Usage
 
-1. **Build your project**:
-   ```vim
-   :CMakeBuild
-   ```
+#### Quick Start
 
-2. **Deploy to remote** (optional, auto-deployed on debug):
+```vim
+" 1. Build your project
+:CMakeBuild
+
+" 2. Deploy to remote
+:CMakeDeploy
+
+" 3. Start debugging
+<leader>dR
+```
+
+#### Detailed Workflow
+
+1. **Verify Configuration**:
+   ```vim
+   :DapRemoteDiagnostic
+   ```
+   Shows:
+   - SSH connectivity
+   - Detected installation paths
+   - gdbserver availability
+   - Configuration directories found
+
+2. **Deploy** (uploads everything):
    ```vim
    :CMakeDeploy
    ```
+   Or press `<Alt-D>`
 
-3. **Start remote debugging**:
-   - Press `<leader>dR` (Remote Debug with Arguments)
-   - Enter program arguments when prompted
-   - The configuration will:
-     - Upload executable to remote host
-     - Start gdbserver on remote machine
-     - Connect local GDB to remote gdbserver
+   This uploads:
+   - ✅ Executable to `/usr/bin/zovideo`
+   - ✅ All `.so` plugins to `/usr/lib/zone/zovideo/`
+   - ✅ Config directories:
+     - `zone/` → `/etc/zone/`
+     - `system.d/` → `/etc/dbus-1/system.d/`
+     - `system-services/` → `/usr/share/dbus-1/system-services/`
+
+3. **Start Remote Debug**:
+   - Press `<leader>dR`
+   - Enter program arguments
+   - The system will:
+     - Upload files if not already done
+     - Start gdbserver on remote
+     - Connect local GDB
      - Open DAP UI with console
-     - Monitor remote stdout/stderr in real-time
+     - Stream stdout/stderr in real-time
 
 ### Features
 
-- ✅ **Automatic deployment** via SCP
-- ✅ **Remote output monitoring** - stdout/stderr shown in DAP console
-- ✅ **GDB pretty printers** support
-- ✅ **Breakpoints** work across network
-- ✅ **Variable inspection** in DAP UI
-- ✅ **Step debugging** (step in/out/over)
-- ✅ **Watch expressions**
-- ✅ **CMake integration** - reads paths from CMakeCache.txt
+- ✅ **Automatic path detection** from CMakeLists.txt
+- ✅ **Intelligent deployment** - uploads executable, plugins, and configs
+- ✅ **Safe rsync operations** - blocks copying to critical system directories
+- ✅ **Remote output monitoring** - real-time stdout/stderr in DAP console
+- ✅ **GDB pretty printers** support for custom types
+- ✅ **Shared library debugging** - breakpoints in `.so` files work correctly
+- ✅ **BusyBox compatible** - works with embedded Linux systems
+- ✅ **CMake integration** - reads all paths from CMakeCache.txt
+- ✅ **Diagnostic tools** - verify configuration before debugging
+
+### Troubleshooting
+
+#### Check Configuration
+
+```vim
+:DapRemoteDiagnostic
+```
+
+Shows complete diagnostic info:
+- ✅ Environment variables status
+- ✅ SSH connectivity test
+- ✅ Installation paths detected
+- ✅ gdbserver availability
+- ✅ Active gdbserver processes
+
+#### View GDB Commands
+
+```vim
+:DapShowGdbCommands
+```
+
+Shows all GDB setup commands including:
+- `set sysroot remote:/` (load remote libraries)
+- `set breakpoint pending on` (allow breakpoints in unloaded .so)
+- `set auto-solib-add on` (auto-load shared library symbols)
+- Pretty printer setup
+
+#### Common Issues
+
+**Breakpoints in `.so` not working?**
+- Ensure plugins are deployed: `:CMakeDeploy`
+- Check `LD_LIBRARY_PATH` includes plugin directory
+- Verify `.so` files compiled with `-g` flag
+
+**"Connection timed out" error?**
+- Check SSH connectivity: `ssh root@<host>`
+- Verify gdbserver port not blocked by firewall
+- Confirm gdbserver installed on remote: `which gdbserver`
+
+**Source files show as empty?**
+- Ensure local source matches remote binary
+- Check compilation was done with debug symbols (`-g`)
+- Use `:DapRemoteDiagnostic` to verify paths
 
 ### Keymaps for Debugging
 
@@ -300,9 +408,22 @@ export REMOTE_GDBSERVER_PORT="10000"
 |---------|--------|
 | `:CMakeBuild` | Build project |
 | `:CMakeDebug` | Build in debug mode |
-| `:CMakeDeploy` | Deploy to remote (custom command) |
+| `:CMakeDeploy` | Deploy executable, plugins, and config files to remote system |
+| `:CMakeDeploy build` | Build first, then prompt to deploy manually |
 | `:CMakeClean` | Clean build |
 | `:CMakeSelectBuildType` | Select build type |
+| `<Alt-D>` | Quick deploy to remote (keymap) |
+
+### Remote Debugging Diagnostics
+
+| Command | Action |
+|---------|--------|
+| `:DapRemoteDiagnostic` | Verify remote debugging configuration and connectivity |
+| `:DapShowGdbCommands` | Show GDB setup commands that will be executed |
+| `:DapCleanupMonitor` | Stop and cleanup remote output monitoring |
+| `:DapMonitorStatus` | Check status of remote output monitor |
+| `<leader>dC` | Cleanup debug monitor (keymap) |
+| `<leader>dM` | Monitor status (keymap) |
 
 ### Copilot
 
