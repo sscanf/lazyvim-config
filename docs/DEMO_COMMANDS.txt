@@ -1,0 +1,58 @@
+═══════════════════════════════════════════════════════════
+  COMANDOS PARA DEMO GIF - Copiar/Pegar Durante Grabación
+═══════════════════════════════════════════════════════════
+
+PREPARACIÓN:
+1. Terminal: 100x30, fuente 14pt
+2. Ejecutar: peek &
+3. Configurar Peek: GIF, 15 FPS
+4. Posicionar ventana sobre terminal
+5. Click "Record" en Peek
+
+─────────────────────────────────────────────────────────────
+ESCENA 1: DIAGNÓSTICO REMOTO (15 seg)
+─────────────────────────────────────────────────────────────
+
+cd ~/zitro/projects/zovideo
+nvim manager/zovideo.cpp
+
+# Dentro de nvim:
+:DapRemoteDiagnostic
+# Esperar 3 segundos a ver output
+:q
+
+─────────────────────────────────────────────────────────────
+ESCENA 2: DEPLOY AUTOMÁTICO (20 seg)
+─────────────────────────────────────────────────────────────
+
+nvim manager/zovideo.cpp
+
+# Dentro de nvim:
+:CMakeDeploy
+# Esperar a ver mensajes de upload completo
+:q
+
+─────────────────────────────────────────────────────────────
+ESCENA 3: DEBUGGING CON BREAKPOINT EN .SO (30 seg)
+─────────────────────────────────────────────────────────────
+
+nvim plugins/x11config_video/x11config_video.cpp
+
+# Dentro de nvim:
+50G                       # Ir a línea con código
+:DapToggleBreakpoint      # Poner breakpoint (círculo rojo)
+:DapContinue              # Iniciar debug remoto
+# Esperar conexión y que se pare en el breakpoint
+# Mostrar variables
+:DapTerminate             # Terminar
+:q
+
+─────────────────────────────────────────────────────────────
+FIN
+─────────────────────────────────────────────────────────────
+
+5. Click "Stop" en Peek
+6. Guardar como: ~/.config/nvim/docs/images/demo.gif
+
+OPTIMIZAR (si es >5MB):
+gifsicle -O3 --colors 256 input.gif -o ~/.config/nvim/docs/images/demo.gif

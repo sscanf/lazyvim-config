@@ -300,6 +300,40 @@ _G.close_deploy_console = function()
   end
 end
 
+-- Función para cerrar ventanas vacías (sin buffer válido o con buffer vacío sin nombre)
+local function close_empty_windows()
+  local closed_count = 0
+
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_is_valid(win) then
+      local buf = vim.api.nvim_win_get_buf(win)
+
+      -- No cerrar si es el buffer de Remote Debug Output
+      local buf_name = vim.api.nvim_buf_get_name(buf)
+      if not buf_name:match(REMOTE_OUTPUT_BUFFER_NAME) then
+        -- Verificar si es un buffer vacío sin nombre
+        local is_empty = buf_name == "" or buf_name == "[No Name]"
+        local line_count = vim.api.nvim_buf_line_count(buf)
+        local first_line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
+
+        -- Cerrar si es un buffer vacío sin nombre y solo tiene una línea en blanco
+        if is_empty and line_count == 1 and first_line == "" then
+          -- Verificar que no sea la última ventana
+          local total_windows = #vim.api.nvim_list_wins()
+          if total_windows > 1 then
+            pcall(vim.api.nvim_win_close, win, true)
+            closed_count = closed_count + 1
+          end
+        end
+      end
+    end
+  end
+
+  if closed_count > 0 then
+    log_to_console(string.format("🧹 Cerradas %d ventana(s) vacía(s)", closed_count), vim.log.levels.INFO)
+  end
+end
+
 -- Synchronous version (kept for compatibility)
 local function run_remote(cmd)
   local ssh_cmd = build_ssh_command(cmd)
@@ -2041,6 +2075,20 @@ function _G.dap_remote_debug()
             log_to_console("💡 Revisa los logs de DAP para ver errores", vim.log.levels.INFO)
           else
             log_to_console("✅ Sesión DAP confirmada activa", vim.log.levels.INFO)
+
+            -- Cerrar la consola de deploy y ventanas vacías, dejar solo el buffer de Remote Debug Output
+            vim.defer_fn(function()
+              close_deploy_console()
+              close_empty_windows()
+              -- Asegurar que el buffer de Remote Debug Output está visible
+              local output_buf = BufferManager.find_by_name(REMOTE_OUTPUT_BUFFER_NAME)
+              if output_buf then
+                local win = BufferManager.find_window_for_buffer(output_buf)
+                if not win then
+                  BufferManager.open_in_split(output_buf)
+                end
+              end
+            end, 500)
           end
         end, 1000)
       end, wait_ms)
