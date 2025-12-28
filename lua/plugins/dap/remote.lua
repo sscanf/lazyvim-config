@@ -247,7 +247,7 @@ end
 
 -- Obtiene la ruta de instalación del ejecutable principal
 local function get_executable_install_path()
-  local source_dir = get_cmake_cache_var("CMAKE_SOURCE_DIR")
+  local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
   if not source_dir then
     return "/usr/bin" -- Fallback si no se encuentra
   end
@@ -260,7 +260,7 @@ end
 
 -- Obtiene la ruta de instalación de los plugins .so
 local function get_plugin_install_path()
-  local source_dir = get_cmake_cache_var("CMAKE_SOURCE_DIR")
+  local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
   if not source_dir then
     return "/usr/lib/zone/zovideo/" -- Fallback si no se encuentra
   end
@@ -288,13 +288,17 @@ end
 
 -- Obtiene directorios adicionales para deploy desde install(DIRECTORY ...)
 local function get_additional_install_dirs()
-  local source_dir = get_cmake_cache_var("CMAKE_SOURCE_DIR")
+  local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
   if not source_dir then
+    vim.notify("⚠️  CMAKE_HOME_DIRECTORY no encontrado", vim.log.levels.WARN)
     return {}
   end
 
   local manager_cmake = source_dir .. "/manager/CMakeLists.txt"
+  vim.notify(string.format("🔍 Buscando install(DIRECTORY) en: %s", manager_cmake), vim.log.levels.INFO)
+
   if vim.fn.filereadable(manager_cmake) ~= 1 then
+    vim.notify(string.format("⚠️  No se pudo leer: %s", manager_cmake), vim.log.levels.WARN)
     return {}
   end
 
@@ -302,7 +306,11 @@ local function get_additional_install_dirs()
   local dirs = {}
 
   -- Buscar: install(DIRECTORY ... DESTINATION ...)
+  local count = 0
   for install_line in content:gmatch("install%s*%(.-DIRECTORY.-DESTINATION[^%)]+%)") do
+    count = count + 1
+    vim.notify(string.format("   📄 Línea install #%d: %s", count, install_line:sub(1, 80)), vim.log.levels.INFO)
+
     local source_path = install_line:match("DIRECTORY%s+([^%s]+)")
     local dest_path = install_line:match("DESTINATION%s+([^%s%)]+)")
 
@@ -312,11 +320,19 @@ local function get_additional_install_dirs()
       -- Remover trailing slash si existe
       source_path = source_path:gsub("/$", "")
 
+      vim.notify(string.format("   ✓ Detectado: %s -> %s", path_basename(source_path), dest_path), vim.log.levels.INFO)
+
       table.insert(dirs, {
         source = source_path,
         destination = dest_path,
       })
+    else
+      vim.notify(string.format("   ⚠️  No se pudo parsear: source=%s dest=%s", tostring(source_path), tostring(dest_path)), vim.log.levels.WARN)
     end
+  end
+
+  if count == 0 then
+    vim.notify("   ⚠️  No se encontraron líneas install(DIRECTORY ...)", vim.log.levels.WARN)
   end
 
   return dirs
