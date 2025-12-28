@@ -97,6 +97,92 @@ local function build_ssh_command(cmd)
   return string.format("sshpass -e ssh -p %s -o StrictHostKeyChecking=no root@%s %s", port, host, shell_quote(cmd))
 end
 
+-- ============================================================================
+-- DAP UI CONSOLE LOGGING
+-- ============================================================================
+
+local deploy_log_buffer = nil
+local deploy_log_window = nil
+
+-- Función para escribir logs en la consola de DAP UI durante el deploy
+local function log_to_console(message, level)
+  level = level or vim.log.levels.INFO
+
+  -- También enviar a vim.notify para compatibilidad
+  vim.notify(message, level)
+
+  -- Intentar escribir en la consola de DAP UI
+  local ok, dapui = pcall(require, "dapui")
+  if not ok then
+    return
+  end
+
+  -- Si no hay buffer de log, crear uno
+  if not deploy_log_buffer or not vim.api.nvim_buf_is_valid(deploy_log_buffer) then
+    deploy_log_buffer = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(deploy_log_buffer, "DAP Deploy Logs")
+    vim.api.nvim_buf_set_option(deploy_log_buffer, 'buftype', 'nofile')
+    vim.api.nvim_buf_set_option(deploy_log_buffer, 'swapfile', false)
+    vim.api.nvim_buf_set_option(deploy_log_buffer, 'filetype', 'dap-console')
+  end
+
+  -- Añadir el mensaje al buffer
+  local lines = vim.split(message, "\n")
+  local line_count = vim.api.nvim_buf_line_count(deploy_log_buffer)
+  vim.api.nvim_buf_set_lines(deploy_log_buffer, line_count, line_count, false, lines)
+
+  -- Si la ventana está abierta, hacer scroll al final
+  if deploy_log_window and vim.api.nvim_win_is_valid(deploy_log_window) then
+    vim.api.nvim_win_set_cursor(deploy_log_window, {vim.api.nvim_buf_line_count(deploy_log_buffer), 0})
+  end
+end
+
+-- Función para abrir la ventana de logs de deploy
+local function open_deploy_console()
+  if deploy_log_buffer and vim.api.nvim_buf_is_valid(deploy_log_buffer) then
+    -- Limpiar buffer anterior
+    vim.api.nvim_buf_set_lines(deploy_log_buffer, 0, -1, false, {})
+  else
+    -- Crear nuevo buffer
+    deploy_log_buffer = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(deploy_log_buffer, "DAP Deploy Logs")
+    vim.api.nvim_buf_set_option(deploy_log_buffer, 'buftype', 'nofile')
+    vim.api.nvim_buf_set_option(deploy_log_buffer, 'swapfile', false)
+    vim.api.nvim_buf_set_option(deploy_log_buffer, 'filetype', 'dap-console')
+  end
+
+  -- Abrir ventana en la parte inferior
+  vim.cmd('botright 15split')
+  deploy_log_window = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(deploy_log_window, deploy_log_buffer)
+
+  -- Configurar opciones de la ventana
+  vim.wo.number = false
+  vim.wo.relativenumber = false
+  vim.wo.signcolumn = "no"
+  vim.wo.wrap = false
+
+  -- Header
+  local header = {
+    "═══════════════════════════════════════════════════════════",
+    "   REMOTE DEPLOYMENT LOGS",
+    "═══════════════════════════════════════════════════════════",
+    ""
+  }
+  vim.api.nvim_buf_set_lines(deploy_log_buffer, 0, 0, false, header)
+
+  -- Volver a la ventana anterior
+  vim.cmd('wincmd p')
+end
+
+-- Función global para cerrar la ventana de logs
+_G.close_deploy_console = function()
+  if deploy_log_window and vim.api.nvim_win_is_valid(deploy_log_window) then
+    vim.api.nvim_win_close(deploy_log_window, true)
+    deploy_log_window = nil
+  end
+end
+
 local function run_remote(cmd)
   local ssh_cmd = build_ssh_command(cmd)
   if not ssh_cmd then
@@ -409,8 +495,12 @@ end
 -- ============================================================================
 
 local function ensure_remote_program()
+  -- Abrir consola de logs al iniciar deploy
+  open_deploy_console()
+
   local lpath = os.getenv("LOCAL_PROGRAM_PATH")
   if not lpath or vim.fn.filereadable(lpath) ~= 1 then
+    log_to_console("❌ LOCAL_PROGRAM_PATH no existe o no es legible", vim.log.levels.ERROR)
     return nil, "LOCAL_PROGRAM_PATH no existe o no es legible"
   end
 
@@ -424,7 +514,7 @@ local function ensure_remote_program()
   local base = path_basename(lpath)
   local target = exe_install_path .. base
 
-  vim.notify(string.format("📦 Ruta ejecutable detectada: %s", exe_install_path), vim.log.levels.INFO)
+  log_to_console(string.format("📦 Ruta ejecutable detectada: %s", exe_install_path), vim.log.levels.INFO)
 
   -- Crear directorio si no existe
   local exists_code = select(1, run_remote(string.format("test -d %s", shell_quote(exe_install_path))))
@@ -436,17 +526,19 @@ local function ensure_remote_program()
   end
 
   -- Upload ejecutable principal y hacer ejecutable
-  vim.notify(string.format("📦 Subiendo ejecutable: %s -> %s", base, target), vim.log.levels.INFO)
+  log_to_console(string.format("📦 Subiendo ejecutable: %s -> %s", base, target), vim.log.levels.INFO)
   local scp_code, scp_out = scp_upload(lpath, target)
   if scp_code ~= 0 then
+    log_to_console(string.format("❌ SCP falló: %s", scp_out), vim.log.levels.ERROR)
     return nil, "SCP falló: " .. scp_out
   end
 
   local ch_code = select(1, run_remote(string.format("chmod +x %s", shell_quote(target))))
   if ch_code ~= 0 then
+    log_to_console("❌ chmod +x falló en el target", vim.log.levels.ERROR)
     return nil, "chmod +x falló en el target"
   end
-  vim.notify(string.format("✅ Ejecutable desplegado: %s", target), vim.log.levels.INFO)
+  log_to_console(string.format("✅ Ejecutable desplegado: %s", target), vim.log.levels.INFO)
 
   -- Subir también los plugins .so del directorio de build
   -- Obtener el directorio raíz del build (donde está CMakeCache.txt)
@@ -466,31 +558,31 @@ local function ensure_remote_program()
     end
   end
 
-  vim.notify(string.format("🔍 Buscando plugins en: %s/plugins", build_dir), vim.log.levels.INFO)
+  log_to_console(string.format("🔍 Buscando plugins en: %s/plugins", build_dir), vim.log.levels.INFO)
 
   local so_files = vim.fn.globpath(build_dir .. "/plugins", "**/*.so", false, true)
-  vim.notify(string.format("🔍 Encontrados %d archivo(s) .so", #so_files), vim.log.levels.INFO)
+  log_to_console(string.format("🔍 Encontrados %d archivo(s) .so", #so_files), vim.log.levels.INFO)
 
   if #so_files > 0 then
     -- Obtener ruta de instalación de plugins desde CMakeLists.txt
     local plugin_path = get_plugin_install_path()
-    vim.notify(string.format("📦 Ruta de plugins detectada: %s", plugin_path), vim.log.levels.INFO)
+    log_to_console(string.format("📦 Ruta de plugins detectada: %s", plugin_path), vim.log.levels.INFO)
 
     -- Crear directorio de plugins si no existe
     local mk_plugin_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(plugin_path))))
     if mk_plugin_code ~= 0 then
-      vim.notify("⚠️  No se pudo crear directorio de plugins", vim.log.levels.WARN)
+      log_to_console("⚠️  No se pudo crear directorio de plugins", vim.log.levels.WARN)
     end
 
-    vim.notify(string.format("📦 Subiendo %d plugin(s) .so...", #so_files), vim.log.levels.INFO)
+    log_to_console(string.format("📦 Subiendo %d plugin(s) .so...", #so_files), vim.log.levels.INFO)
     for _, so_file in ipairs(so_files) do
       local so_name = path_basename(so_file)
       local remote_so = plugin_path .. so_name
       local so_scp_code, so_scp_out = scp_upload(so_file, remote_so)
       if so_scp_code ~= 0 then
-        vim.notify(string.format("⚠️  Falló subir %s: %s", so_name, so_scp_out), vim.log.levels.WARN)
+        log_to_console(string.format("⚠️  Falló subir %s: %s", so_name, so_scp_out), vim.log.levels.WARN)
       else
-        vim.notify(string.format("✓ Subido: %s", so_name), vim.log.levels.INFO)
+        log_to_console(string.format("✓ Subido: %s", so_name), vim.log.levels.INFO)
       end
     end
   end
@@ -498,28 +590,28 @@ local function ensure_remote_program()
   -- Subir directorios adicionales (config files, dbus, etc.)
   local additional_dirs = get_additional_install_dirs()
   if #additional_dirs > 0 then
-    vim.notify(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
+    log_to_console(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
 
     for _, dir_info in ipairs(additional_dirs) do
       local source_dir = dir_info.source
       local dest_dir = dir_info.destination
 
       -- Verificar que el directorio fuente existe
-      vim.notify(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
+      log_to_console(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
 
       if vim.fn.isdirectory(source_dir) == 1 then
         -- Crear directorio destino si no existe
-        vim.notify(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
+        log_to_console(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
         local mk_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(dest_dir))))
         if mk_code ~= 0 then
-          vim.notify(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
+          log_to_console(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
         else
           -- VALIDACIÓN: Evitar copiar a directorios críticos del sistema
           local dangerous_dirs = { "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/lib", "/usr/lib" }
           local is_dangerous = false
           for _, danger_dir in ipairs(dangerous_dirs) do
             if dest_dir == danger_dir or dest_dir == danger_dir .. "/" then
-              vim.notify(
+              log_to_console(
                 string.format("❌ PELIGRO: No se permite copiar directorios a %s (ruta crítica del sistema)", dest_dir),
                 vim.log.levels.ERROR
               )
@@ -542,25 +634,29 @@ local function ensure_remote_program()
               dest_dir
             )
 
-            vim.notify(string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir), vim.log.levels.INFO)
+            log_to_console(string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir), vim.log.levels.INFO)
           local rsync_result = vim.fn.system(rsync_cmd)
 
           if vim.v.shell_error == 0 then
-            vim.notify(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
+            log_to_console(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
           else
-            vim.notify(
+            log_to_console(
               string.format("⚠️  Falló sincronizar %s (code: %d)", path_basename(source_dir), vim.v.shell_error),
               vim.log.levels.WARN
             )
-            vim.notify(string.format("   Error: %s", vim.trim(rsync_result)), vim.log.levels.WARN)
+            log_to_console(string.format("   Error: %s", vim.trim(rsync_result)), vim.log.levels.WARN)
           end
           end -- fin if not is_dangerous
         end
       else
-        vim.notify(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
+        log_to_console(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
       end
     end
   end
+
+  log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+  log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+  log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   return target, nil
 end
@@ -988,6 +1084,7 @@ end, { desc = "Estado del monitoreo remoto" })
 
 vim.keymap.set("n", "<leader>dC", ":DapCleanupMonitor<CR>", { desc = "Cleanup Debug Monitor" })
 vim.keymap.set("n", "<leader>dM", ":DapMonitorStatus<CR>", { desc = "Monitor Status" })
+vim.keymap.set("n", "<leader>dL", ":DapCloseDeployConsole<CR>", { desc = "Close Deploy Console" })
 
 -- ============================================================================
 -- PUBLIC DEPLOY FUNCTION
@@ -1012,16 +1109,11 @@ function _G.deploy_remote_program()
   default_exec = string.format("%s/%s", default_exec, project_name)
 
   resolve_program_or_prompt("LOCAL_PROGRAM_PATH", default_exec, function(local_prog)
-    vim.notify("🚀 Iniciando deploy remoto...", vim.log.levels.INFO)
-    vim.notify("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-
     local rprog, err = ensure_remote_program()
     if not rprog then
-      return vim.notify("❌ " .. err, vim.log.levels.ERROR)
+      log_to_console("❌ " .. err, vim.log.levels.ERROR)
+      return
     end
-
-    vim.notify("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-    vim.notify("✅ Deploy completado exitosamente", vim.log.levels.INFO)
   end)
 end
 
@@ -1049,6 +1141,12 @@ vim.api.nvim_create_user_command("DapShowGdbCommands", function()
     vim.notify("⚠️  No se detectó OECORE_TARGET_SYSROOT, pretty printers no disponibles", vim.log.levels.WARN)
   end
 end, { desc = "Mostrar comandos GDB que se ejecutarán" })
+
+-- Close deploy console
+vim.api.nvim_create_user_command("DapCloseDeployConsole", function()
+  _G.close_deploy_console()
+  vim.notify("✅ Consola de deploy cerrada", vim.log.levels.INFO)
+end, { desc = "Cerrar ventana de logs de deploy" })
 
 -- Diagnostic command
 vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
