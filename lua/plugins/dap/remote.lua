@@ -305,12 +305,14 @@ local function get_additional_install_dirs()
   local content = table.concat(vim.fn.readfile(manager_cmake), "\n")
   local dirs = {}
 
-  -- Buscar: install(DIRECTORY ... DESTINATION ...)
+  -- Buscar SOLO líneas install(DIRECTORY ...), no install(TARGETS ...)
   local count = 0
-  for install_line in content:gmatch("install%s*%(.-DIRECTORY.-DESTINATION[^%)]+%)") do
+  -- Pattern más específico: install(DIRECTORY debe estar al principio
+  for install_line in content:gmatch("install%s*%(%s*DIRECTORY%s+[^%)]+%)") do
     count = count + 1
     vim.notify(string.format("   📄 Línea install #%d: %s", count, install_line:sub(1, 80)), vim.log.levels.INFO)
 
+    -- Extraer el path después de DIRECTORY y antes de DESTINATION
     local source_path = install_line:match("DIRECTORY%s+([^%s]+)")
     local dest_path = install_line:match("DESTINATION%s+([^%s%)]+)")
 
@@ -327,7 +329,10 @@ local function get_additional_install_dirs()
         destination = dest_path,
       })
     else
-      vim.notify(string.format("   ⚠️  No se pudo parsear: source=%s dest=%s", tostring(source_path), tostring(dest_path)), vim.log.levels.WARN)
+      vim.notify(
+        string.format("   ⚠️  No se pudo parsear: source=%s dest=%s", tostring(source_path), tostring(dest_path)),
+        vim.log.levels.WARN
+      )
     end
   end
 
