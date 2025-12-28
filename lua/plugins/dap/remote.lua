@@ -509,20 +509,35 @@ local function ensure_remote_program()
         if mk_code ~= 0 then
           vim.notify(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
         else
-          -- Usar rsync para subir el contenido del directorio
-          -- Nota: NO usar shell_quote en la ruta local (source_dir)
-          local remote_port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
-          local remote_host = os.getenv("REMOTE_SSH_HOST")
+          -- VALIDACIÓN: Evitar copiar a directorios críticos del sistema
+          local dangerous_dirs = { "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/lib", "/usr/lib" }
+          local is_dangerous = false
+          for _, danger_dir in ipairs(dangerous_dirs) do
+            if dest_dir == danger_dir or dest_dir == danger_dir .. "/" then
+              vim.notify(
+                string.format("❌ PELIGRO: No se permite copiar directorios a %s (ruta crítica del sistema)", dest_dir),
+                vim.log.levels.ERROR
+              )
+              is_dangerous = true
+              break
+            end
+          end
 
-          local rsync_cmd = string.format(
-            "rsync -avz --delete -e 'sshpass -e ssh -p %s -o StrictHostKeyChecking=no' '%s/' root@%s:'%s/'",
-            remote_port,
-            source_dir,
-            remote_host,
-            dest_dir
-          )
+          if not is_dangerous then
+            -- Usar rsync para subir el contenido del directorio
+            -- IMPORTANTE: NO usar --delete para evitar borrar archivos del sistema
+            local remote_port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
+            local remote_host = os.getenv("REMOTE_SSH_HOST")
 
-          vim.notify(string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir), vim.log.levels.INFO)
+            local rsync_cmd = string.format(
+              "rsync -avz -e 'sshpass -e ssh -p %s -o StrictHostKeyChecking=no' '%s/' root@%s:'%s/'",
+              remote_port,
+              source_dir,
+              remote_host,
+              dest_dir
+            )
+
+            vim.notify(string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir), vim.log.levels.INFO)
           local rsync_result = vim.fn.system(rsync_cmd)
 
           if vim.v.shell_error == 0 then
@@ -534,6 +549,7 @@ local function ensure_remote_program()
             )
             vim.notify(string.format("   Error: %s", vim.trim(rsync_result)), vim.log.levels.WARN)
           end
+          end -- fin if not is_dangerous
         end
       else
         vim.notify(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
