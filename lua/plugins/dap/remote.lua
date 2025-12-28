@@ -1489,6 +1489,9 @@ end, { desc = "Cerrar ventana de logs de deploy" })
 
 -- Diagnostic command
 vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
+  -- Abrir consola de logs
+  open_deploy_console()
+
   -- Cargar variables desde CMakeCache.txt (como lo hace dap_remote_debug)
   vim.env.SSHPASS = get_cmake_cache_var("REMOTE_SSH_PASS")
   vim.env.REMOTE_SSH_HOST = get_cmake_cache_var("REMOTE_SSH_HOST")
@@ -1500,20 +1503,17 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   local port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
   local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or DEFAULT_GDB_PORT
 
-  vim.notify("🔍 Diagnóstico de Debugging Remoto", vim.log.levels.INFO)
-  vim.notify(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    vim.log.levels.INFO
-  )
+  log_to_console("🔍 Diagnóstico de Debugging Remoto", vim.log.levels.INFO)
+  log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   -- Mostrar fuente de configuración
   local cmake_cache = get_cmake_cache_var("CMAKE_CACHEFILE_DIR")
   if cmake_cache then
-    vim.notify(string.format("📋 Configuración desde: %s/CMakeCache.txt", cmake_cache), vim.log.levels.INFO)
+    log_to_console(string.format("📋 Configuración desde: %s/CMakeCache.txt", cmake_cache), vim.log.levels.INFO)
   else
-    vim.notify("⚠️  No se encontró CMakeCache.txt", vim.log.levels.WARN)
+    log_to_console("⚠️  No se encontró CMakeCache.txt", vim.log.levels.WARN)
   end
-  vim.notify("", vim.log.levels.INFO)
+  log_to_console("", vim.log.levels.INFO)
 
   -- Verificar variables
   local vars =
@@ -1522,96 +1522,90 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
     local value = os.getenv(var)
     if value then
       local display = var == "SSHPASS" and "***" or value
-      vim.notify("✅ " .. var .. ": " .. display, vim.log.levels.INFO)
+      log_to_console("✅ " .. var .. ": " .. display, vim.log.levels.INFO)
     else
-      vim.notify("❌ " .. var .. ": NO DEFINIDA", vim.log.levels.WARN)
+      log_to_console("❌ " .. var .. ": NO DEFINIDA", vim.log.levels.WARN)
     end
   end
 
   if not host then
-    vim.notify("❌ REMOTE_SSH_HOST no definida. No se pueden hacer más verificaciones.", vim.log.levels.ERROR)
+    log_to_console("❌ REMOTE_SSH_HOST no definida. No se pueden hacer más verificaciones.", vim.log.levels.ERROR)
     return
   end
 
-  vim.notify(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    vim.log.levels.INFO
-  )
+  log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   -- Conectividad SSH
-  vim.notify("🔌 Verificando conectividad SSH...", vim.log.levels.INFO)
+  log_to_console("🔌 Verificando conectividad SSH...", vim.log.levels.INFO)
   local ssh_test = build_ssh_command("echo 'OK'")
   local result = vim.fn.system(ssh_test)
   if vim.v.shell_error == 0 then
-    vim.notify("✅ Conexión SSH exitosa", vim.log.levels.INFO)
+    log_to_console("✅ Conexión SSH exitosa", vim.log.levels.INFO)
   else
-    vim.notify("❌ Conexión SSH fallida: " .. result, vim.log.levels.ERROR)
+    log_to_console("❌ Conexión SSH fallida: " .. result, vim.log.levels.ERROR)
     return
   end
 
   -- Rutas de instalación detectadas desde CMakeLists.txt
-  vim.notify("📂 Rutas de instalación detectadas:", vim.log.levels.INFO)
+  log_to_console("📂 Rutas de instalación detectadas:", vim.log.levels.INFO)
   local exe_install_path = get_executable_install_path()
   local plugin_install_path = get_plugin_install_path()
-  vim.notify(string.format("   Ejecutable: %s", exe_install_path), vim.log.levels.INFO)
-  vim.notify(string.format("   Plugins:    %s", plugin_install_path), vim.log.levels.INFO)
+  log_to_console(string.format("   Ejecutable: %s", exe_install_path), vim.log.levels.INFO)
+  log_to_console(string.format("   Plugins:    %s", plugin_install_path), vim.log.levels.INFO)
 
   -- Mostrar directorios adicionales
   local additional_dirs = get_additional_install_dirs()
   if #additional_dirs > 0 then
-    vim.notify(string.format("   Directorios de config: %d detectados", #additional_dirs), vim.log.levels.INFO)
+    log_to_console(string.format("   Directorios de config: %d detectados", #additional_dirs), vim.log.levels.INFO)
     for _, dir_info in ipairs(additional_dirs) do
-      vim.notify(string.format("      • %s -> %s", path_basename(dir_info.source), dir_info.destination), vim.log.levels.INFO)
+      log_to_console(string.format("      • %s -> %s", path_basename(dir_info.source), dir_info.destination), vim.log.levels.INFO)
     end
   end
 
   local deploy_path = get_cmake_cache_var("DEPLOY_REMOTE_PATH")
   if deploy_path then
-    vim.notify(string.format("   Deploy:     %s", deploy_path), vim.log.levels.INFO)
+    log_to_console(string.format("   Deploy:     %s", deploy_path), vim.log.levels.INFO)
     if deploy_path == "/usr/bin/" or deploy_path == exe_install_path then
-      vim.notify("   ⚠️  DEPLOY_REMOTE_PATH debería ser temporal (/tmp/), no la ruta de instalación", vim.log.levels.WARN)
+      log_to_console("   ⚠️  DEPLOY_REMOTE_PATH debería ser temporal (/tmp/), no la ruta de instalación", vim.log.levels.WARN)
     end
   end
 
   -- Verificar gdbserver
-  vim.notify("📦 Verificando gdbserver...", vim.log.levels.INFO)
+  log_to_console("📦 Verificando gdbserver...", vim.log.levels.INFO)
   local gdb_check = build_ssh_command("which gdbserver")
   local gdb_path = vim.fn.system(gdb_check)
   if vim.v.shell_error == 0 then
-    vim.notify("✅ Gdbserver encontrado en: " .. vim.trim(gdb_path), vim.log.levels.INFO)
+    log_to_console("✅ Gdbserver encontrado en: " .. vim.trim(gdb_path), vim.log.levels.INFO)
   else
-    vim.notify("❌ Gdbserver NO instalado en el host remoto", vim.log.levels.ERROR)
-    vim.notify("💡 Instala con: ssh root@" .. host .. " 'apt-get install gdbserver'", vim.log.levels.INFO)
+    log_to_console("❌ Gdbserver NO instalado en el host remoto", vim.log.levels.ERROR)
+    log_to_console("💡 Instala con: ssh root@" .. host .. " 'apt-get install gdbserver'", vim.log.levels.INFO)
   end
 
   -- Procesos activos (BusyBox compatible)
-  vim.notify("🔍 Buscando procesos gdbserver...", vim.log.levels.INFO)
+  log_to_console("🔍 Buscando procesos gdbserver...", vim.log.levels.INFO)
   local ps_check = build_ssh_command("ps | grep gdbserver | grep -v grep")
   local ps_result = vim.fn.system(ps_check)
   if vim.v.shell_error == 0 and ps_result ~= "" then
-    vim.notify("⚙️  Procesos gdbserver activos:", vim.log.levels.INFO)
+    log_to_console("⚙️  Procesos gdbserver activos:", vim.log.levels.INFO)
     for line in ps_result:gmatch("[^\r\n]+") do
-      vim.notify("   " .. line, vim.log.levels.INFO)
+      log_to_console("   " .. line, vim.log.levels.INFO)
     end
   else
-    vim.notify("ℹ️  No hay procesos gdbserver corriendo", vim.log.levels.INFO)
+    log_to_console("ℹ️  No hay procesos gdbserver corriendo", vim.log.levels.INFO)
   end
 
   -- Puertos en escucha
-  vim.notify("🔌 Verificando puertos en escucha...", vim.log.levels.INFO)
+  log_to_console("🔌 Verificando puertos en escucha...", vim.log.levels.INFO)
   local port_check = build_ssh_command("ss -tuln | grep LISTEN")
   local ports = vim.fn.system(port_check)
   if ports:find(":" .. gdb_port) then
-    vim.notify("✅ Puerto " .. gdb_port .. " está en escucha", vim.log.levels.INFO)
+    log_to_console("✅ Puerto " .. gdb_port .. " está en escucha", vim.log.levels.INFO)
   else
-    vim.notify("ℹ️  Puerto " .. gdb_port .. " NO está en escucha", vim.log.levels.INFO)
+    log_to_console("ℹ️  Puerto " .. gdb_port .. " NO está en escucha", vim.log.levels.INFO)
   end
 
-  vim.notify(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-    vim.log.levels.INFO
-  )
-  vim.notify("✅ Diagnóstico completado", vim.log.levels.INFO)
+  log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
+  log_to_console("✅ Diagnóstico completado", vim.log.levels.INFO)
 end, { desc = "Diagnóstico de debugging remoto" })
 
 return {}
