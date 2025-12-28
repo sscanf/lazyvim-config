@@ -426,8 +426,9 @@ local function create_gdbserver_script(script_file, gdb_port, rprog, args)
   -- Remover trailing slash si existe (LD_LIBRARY_PATH no lo necesita)
   plugin_path = plugin_path:gsub("/$", "")
 
+  -- Usar 'env' en lugar de 'export' porque stdbuf solo puede ejecutar comandos externos
   local gdb_command = string.format(
-    "export LD_LIBRARY_PATH=%s:$LD_LIBRARY_PATH && gdbserver :%s %s %s",
+    "env LD_LIBRARY_PATH=%s:$LD_LIBRARY_PATH gdbserver :%s %s %s",
     plugin_path,
     gdb_port,
     rprog,
