@@ -334,6 +334,24 @@ local function close_empty_windows()
   end
 end
 
+-- Función para cerrar la ventana DAP Console (REPL) durante debug remoto
+local function close_dap_repl_window()
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_is_valid(win) then
+      local buf = vim.api.nvim_win_get_buf(win)
+      if vim.api.nvim_buf_is_valid(buf) then
+        local ft = vim.api.nvim_buf_get_option(buf, "filetype")
+        if ft == "dap-repl" then
+          pcall(vim.api.nvim_win_close, win, true)
+          log_to_console("🧹 Cerrada ventana DAP Console (no necesaria para debug remoto)", vim.log.levels.INFO)
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
 -- Synchronous version (kept for compatibility)
 local function run_remote(cmd)
   local ssh_cmd = build_ssh_command(cmd)
@@ -2076,10 +2094,11 @@ function _G.dap_remote_debug()
           else
             log_to_console("✅ Sesión DAP confirmada activa", vim.log.levels.INFO)
 
-            -- Cerrar la consola de deploy y ventanas vacías, dejar solo el buffer de Remote Debug Output
+            -- Cerrar la consola de deploy, ventanas vacías y DAP Console, dejar solo el buffer de Remote Debug Output
             vim.defer_fn(function()
               close_deploy_console()
               close_empty_windows()
+              close_dap_repl_window()
               -- Asegurar que el buffer de Remote Debug Output está visible
               local output_buf = BufferManager.find_by_name(REMOTE_OUTPUT_BUFFER_NAME)
               if output_buf then
