@@ -484,28 +484,39 @@ local function ensure_remote_program()
       local dest_dir = dir_info.destination
 
       -- Verificar que el directorio fuente existe
+      vim.notify(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
+
       if vim.fn.isdirectory(source_dir) == 1 then
         -- Crear directorio destino si no existe
+        vim.notify(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
         local mk_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(dest_dir))))
         if mk_code ~= 0 then
           vim.notify(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
         else
           -- Usar rsync para subir el contenido del directorio
+          -- Nota: NO usar shell_quote en la ruta local (source_dir)
+          local remote_port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
+          local remote_host = os.getenv("REMOTE_SSH_HOST")
+
           local rsync_cmd = string.format(
-            "rsync -az --delete -e 'sshpass -e ssh -p %s -o StrictHostKeyChecking=no' %s/ root@%s:%s/",
-            os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT,
-            shell_quote(source_dir),
-            os.getenv("REMOTE_SSH_HOST"),
+            "rsync -avz --delete -e 'sshpass -e ssh -p %s -o StrictHostKeyChecking=no' '%s/' root@%s:'%s/'",
+            remote_port,
+            source_dir,
+            remote_host,
             dest_dir
           )
+
+          vim.notify(string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir), vim.log.levels.INFO)
           local rsync_result = vim.fn.system(rsync_cmd)
+
           if vim.v.shell_error == 0 then
             vim.notify(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
           else
             vim.notify(
-              string.format("⚠️  Falló sincronizar %s: %s", path_basename(source_dir), rsync_result),
+              string.format("⚠️  Falló sincronizar %s (code: %d)", path_basename(source_dir), vim.v.shell_error),
               vim.log.levels.WARN
             )
+            vim.notify(string.format("   Error: %s", vim.trim(rsync_result)), vim.log.levels.WARN)
           end
         end
       else
