@@ -392,14 +392,21 @@ local function ensure_remote_program()
   vim.notify(string.format("✅ Ejecutable desplegado: %s", target), vim.log.levels.INFO)
 
   -- Subir también los plugins .so del directorio de build
-  -- Obtener el directorio raíz del build desde CMAKE cache
-  local project_name = get_cmake_cache_var("CMAKE_PROJECT_NAME")
-  local cmake_key = string.format("%s_BINARY_DIR", project_name)
-  local build_dir = get_cmake_cache_var(cmake_key)
+  -- Obtener el directorio raíz del build (donde está CMakeCache.txt)
+  local cmake_cache_path = vim.fn.findfile("CMakeCache.txt", lpath .. ";")
+  local build_dir = nil
 
-  if not build_dir then
-    -- Fallback: asumir que el ejecutable está en un subdirectorio del build root
-    build_dir = vim.fn.fnamemodify(lpath, ":h:h")
+  if cmake_cache_path ~= "" then
+    build_dir = vim.fn.fnamemodify(cmake_cache_path, ":h")
+  else
+    -- Fallback: usar CMAKE_HOME_DIRECTORY + /out/Debug
+    local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
+    if source_dir then
+      build_dir = source_dir .. "/out/Debug"
+    else
+      -- Último fallback: dos niveles arriba del ejecutable
+      build_dir = vim.fn.fnamemodify(lpath, ":h:h")
+    end
   end
 
   vim.notify(string.format("🔍 Buscando plugins en: %s/plugins", build_dir), vim.log.levels.INFO)
