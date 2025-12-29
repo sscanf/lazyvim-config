@@ -1,9 +1,45 @@
 # 💤 LazyVim Configuration
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Neovim](https://img.shields.io/badge/Neovim-0.9+-green.svg)](https://neovim.io)
+[![LazyVim](https://img.shields.io/badge/LazyVim-powered-blueviolet.svg)](https://github.com/LazyVim/LazyVim)
+[![GitHub stars](https://img.shields.io/github/stars/sscanf/lazyvim-config?style=social)](https://github.com/sscanf/lazyvim-config/stargazers)
+
 A comprehensive Neovim configuration based on [LazyVim](https://github.com/LazyVim/LazyVim) with specialized support for C/C++ development, remote debugging, and AI-assisted coding.
+
+## ⚡ Quick Start
+
+```bash
+# Install everything automatically
+curl -fsSL https://raw.githubusercontent.com/sscanf/lazyvim-config/main/install.sh | bash
+
+# Start Neovim and let plugins install
+nvim
+```
+
+For **remote C/C++ debugging**, add to your project's `CMakePresets.json`:
+
+```json
+{
+  "configurePresets": [{
+    "cacheVariables": {
+      "REMOTE_SSH_HOST": "192.168.1.100",
+      "REMOTE_SSH_PASS": "password"
+    }
+  }]
+}
+```
+
+Then:
+```vim
+:CMakeBuild          " Build project
+:CMakeDeploy         " Deploy to remote
+<leader>dR           " Start debugging
+```
 
 ## 📋 Table of Contents
 
+- [Quick Start](#-quick-start)
 - [Features](#-features)
 - [Requirements](#-requirements)
 - [Installation](#-installation)
@@ -12,6 +48,7 @@ A comprehensive Neovim configuration based on [LazyVim](https://github.com/LazyV
 - [Remote Debugging](#-remote-debugging)
 - [Key Mappings](#-key-mappings)
 - [Configuration](#-configuration)
+- [Contributing](#-contributing)
 
 ## ✨ Features
 
@@ -51,20 +88,60 @@ clang                # C/C++ compiler (for clangd)
 
 ## 🚀 Installation
 
+### ⚡ Automatic Installation (Recommended)
+
+Run the automated installer that handles everything for you:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sscanf/lazyvim-config/main/install.sh | bash
+```
+
+Or download and run manually:
+
+```bash
+git clone https://github.com/sscanf/lazyvim-config.git /tmp/lazyvim-config
+cd /tmp/lazyvim-config
+./install.sh
+```
+
+The installer will:
+- ✅ Backup existing configuration automatically
+- ✅ Install system dependencies (neovim, git, fd, ripgrep, nodejs, etc.)
+- ✅ Clone the configuration
+- ✅ Verify Neovim version compatibility
+- ✅ Show you next steps
+
+### 📋 Manual Installation
+
+If you prefer manual installation:
+
 1. **Backup your existing Neovim configuration** (if any):
 
 ```bash
-mv ~/.config/nvim ~/.config/nvim.backup
-mv ~/.local/share/nvim ~/.local/share/nvim.backup
+mv ~/.config/nvim ~/.config/nvim.backup.$(date +%Y%m%d)
+mv ~/.local/share/nvim ~/.local/share/nvim.backup.$(date +%Y%m%d)
 ```
 
 2. **Clone this configuration**:
 
 ```bash
-git clone <your-repo-url> ~/.config/nvim
+git clone https://github.com/sscanf/lazyvim-config.git ~/.config/nvim
 ```
 
-3. **Start Neovim**:
+3. **Install system dependencies**:
+
+```bash
+# Ubuntu/Debian
+sudo apt install neovim git fd-find ripgrep nodejs npm sshpass gdb rsync cmake clang
+
+# Arch Linux
+sudo pacman -S neovim git fd ripgrep nodejs npm sshpass gdb rsync cmake clang
+
+# macOS
+brew install neovim git fd ripgrep node sshpass gdb rsync cmake llvm
+```
+
+4. **Start Neovim**:
 
 ```bash
 nvim
@@ -72,7 +149,7 @@ nvim
 
 LazyVim will automatically install all plugins on first launch.
 
-4. **Install LSP servers** (optional, most will auto-install):
+5. **Install LSP servers** (optional, most will auto-install):
 
 ```vim
 :Mason
@@ -563,7 +640,43 @@ Click on the minimap to jump to that location!
 
 ## 🤝 Contributing
 
-Feel free to open issues or submit pull requests for improvements!
+Contributions are welcome! Whether you're fixing bugs, adding features, or improving documentation, your help is appreciated.
+
+### Quick Contribution Guide
+
+1. **Report bugs**: Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+2. **Suggest features**: Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
+3. **Submit PRs**: Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md)
+
+### Development Setup
+
+```bash
+# Fork and clone your fork
+git clone https://github.com/YOUR_USERNAME/lazyvim-config.git ~/.config/nvim
+cd ~/.config/nvim
+
+# Create a feature branch
+git checkout -b feature/my-awesome-feature
+
+# Make changes, test thoroughly
+nvim
+
+# Commit with conventional commits format
+git commit -m "feat(dap): add support for new architecture"
+
+# Push and create PR
+git push origin feature/my-awesome-feature
+```
+
+For detailed guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Areas We Need Help With
+
+- 🧪 Testing on different platforms (macOS, Windows WSL)
+- 📸 Screenshots and video demos
+- 📚 Documentation improvements
+- 🐛 Bug fixes and performance improvements
+- ✨ New features for remote debugging
 
 ## 📝 License
 
