@@ -1274,30 +1274,12 @@ local function deploy_all_install_items_async(final_callback)
         return
       end
 
-      -- Primero deployar directorios (usando rsync como antes)
-      local dir_index = 1
-      local function deploy_next_dir()
-        if dir_index > #current.group.dirs then
-          -- Cuando terminen los directorios, deployar archivos con tar
-          deploy_files_with_tar()
-          return
-        end
-
-        local dir_item = current.group.dirs[dir_index]
-        dir_index = dir_index + 1
-
-        rsync_async(dir_item.source, dir_item.destination, function(rsync_code, _)
-          if rsync_code == 0 then
-            log_to_console(string.format("   ✓ %s/ -> %s", dir_item.name, dir_item.destination), vim.log.levels.INFO)
-          else
-            log_to_console(string.format("   ⚠️  rsync failed: %s", dir_item.name), vim.log.levels.WARN)
-          end
-          deploy_next_dir()
-        end)
-      end
+      -- Forward declarations
+      local deploy_next_dir
+      local deploy_files_with_tar
 
       -- Deploy files and executables using tar
-      local function deploy_files_with_tar()
+      deploy_files_with_tar = function()
         local all_files = {}
         for _, f in ipairs(current.group.files) do
           table.insert(all_files, f)
@@ -1362,7 +1344,29 @@ local function deploy_all_install_items_async(final_callback)
         })
       end
 
-      -- Iniciar deploy
+      -- Deploy directories (using rsync as before)
+      local dir_index = 1
+      deploy_next_dir = function()
+        if dir_index > #current.group.dirs then
+          -- When directories are done, deploy files with tar
+          deploy_files_with_tar()
+          return
+        end
+
+        local dir_item = current.group.dirs[dir_index]
+        dir_index = dir_index + 1
+
+        rsync_async(dir_item.source, dir_item.destination, function(rsync_code, _)
+          if rsync_code == 0 then
+            log_to_console(string.format("   ✓ %s/ -> %s", dir_item.name, dir_item.destination), vim.log.levels.INFO)
+          else
+            log_to_console(string.format("   ⚠️  rsync failed: %s", dir_item.name), vim.log.levels.WARN)
+          end
+          deploy_next_dir()
+        end)
+      end
+
+      -- Start deploy
       if #current.group.dirs > 0 then
         deploy_next_dir()
       else
