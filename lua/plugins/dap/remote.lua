@@ -52,7 +52,7 @@ local function path_basename(p)
   return p:match("([^/]+)$") or p
 end
 
--- SSH ControlMaster para reutilizar conexiones SSH y acelerar deploys
+-- SSH ControlMaster to reuse SSH connections and speed up deploys
 local function get_ssh_control_options()
   local host = os.getenv("REMOTE_SSH_HOST") or "unknown"
   local port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
@@ -64,14 +64,14 @@ local function get_ssh_control_options()
   )
 end
 
--- Helper para logging que funciona antes de que log_to_console esté definida
+-- Helper for logging before log_to_console is defined
 local function debug_log(msg, level)
   level = level or vim.log.levels.INFO
-  -- Intentar usar log_to_console si está disponible, sino usar vim.notify solo para errores
+  -- Try using log_to_console if available, otherwise use vim.notify only for errors
   if _G.log_to_console then
     _G.log_to_console(msg, level)
   else
-    -- Solo mostrar notificaciones para errores y warnings
+    -- Only show notifications for errors and warnings
     if level == vim.log.levels.ERROR or level == vim.log.levels.WARN then
       vim.notify(msg, level)
     end
@@ -83,7 +83,7 @@ local function get_cmake_cache_var(var_name)
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       local name = vim.api.nvim_buf_get_name(buf)
       if name:match("CMakeCache") then
-        debug_log("📝 Buffer CMakeCache ya abierto: " .. name, vim.log.levels.INFO)
+        debug_log("📝 CMakeCache buffer already open: " .. name, vim.log.levels.INFO)
         return buf
       end
     end
@@ -94,12 +94,12 @@ local function get_cmake_cache_var(var_name)
   if not buf then
     -- Buscar CMakeCache.txt desde el directorio actual del proyecto, no recursivamente en todo el sistema
     local cwd = vim.fn.getcwd()
-    debug_log("📂 Buscando CMakeCache.txt desde: " .. cwd, vim.log.levels.INFO)
+    debug_log("📂 Searching for CMakeCache.txt from: " .. cwd, vim.log.levels.INFO)
 
     local cache_path = vim.fn.findfile("CMakeCache.txt", cwd .. ";")  -- Busca en cwd y directorios padre
 
     if not cache_path or cache_path == "" then
-      debug_log("⚠️  No encontrado en directorio actual o padre, buscando en subdirectorios comunes...", vim.log.levels.INFO)
+      debug_log("⚠️  Not found in current or parent directory, searching in common subdirectories...", vim.log.levels.INFO)
 
       -- Segundo intento: buscar en subdirectorios comunes
       local common_paths = {
@@ -120,11 +120,11 @@ local function get_cmake_cache_var(var_name)
         end
       end
     else
-      debug_log("✅ CMakeCache.txt encontrado: " .. cache_path, vim.log.levels.INFO)
+      debug_log("✅ CMakeCache.txt found: " .. cache_path, vim.log.levels.INFO)
     end
 
     if not cache_path or cache_path == "" then
-      debug_log("❌ CMakeCache.txt NO encontrado en: " .. cwd, vim.log.levels.ERROR)
+      debug_log("❌ CMakeCache.txt NOT found in: " .. cwd, vim.log.levels.ERROR)
       return nil, "CMakeCache.txt not found in project directory: " .. cwd
     end
 
@@ -139,10 +139,10 @@ local function get_cmake_cache_var(var_name)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
-  -- Debug: mostrar qué archivo se está leyendo
+  -- Debug: show which file is being read
   local cache_file = vim.api.nvim_buf_get_name(buf)
   if cache_file and cache_file ~= "" then
-    debug_log("🔍 Buscando " .. var_name .. " en: " .. cache_file, vim.log.levels.INFO)
+    debug_log("🔍 Searching for " .. var_name .. " en: " .. cache_file, vim.log.levels.INFO)
   end
 
   -- Debug: mostrar algunas líneas que contienen la variable buscada
@@ -180,7 +180,7 @@ local function build_ssh_command(cmd)
   local host = os.getenv("REMOTE_SSH_HOST")
   local port = os.getenv("REMOTE_SSH_PORT") or DEFAULT_SSH_PORT
   if not host then
-    vim.notify("❌ REMOTE_SSH_HOST no definida", vim.log.levels.ERROR)
+    vim.notify("❌ REMOTE_SSH_HOST not defined", vim.log.levels.ERROR)
     return nil
   end
   local control_opts = get_ssh_control_options()
@@ -204,7 +204,7 @@ local deploy_log_window = nil
 _G.log_to_console = function(message, level)
   level = level or vim.log.levels.INFO
 
-  -- Solo mostrar notificaciones para errores y warnings
+  -- Only show notifications for errors and warnings
   if level == vim.log.levels.ERROR or level == vim.log.levels.WARN then
     vim.notify(message, level)
   end
@@ -330,21 +330,21 @@ local function close_empty_windows()
   end
 
   if closed_count > 0 then
-    log_to_console(string.format("🧹 Cerradas %d ventana(s) vacía(s)", closed_count), vim.log.levels.INFO)
+    log_to_console(string.format("🧹 Closed %d empty window(s)", closed_count), vim.log.levels.INFO)
   end
 end
 
--- Función para cerrar la ventana DAP Console (dapui_console) pero mantener DAP REPL (dap-repl)
+-- Function to close DAP Console window (dapui_console) but keep DAP REPL (dap-repl)
 local function close_dap_console_window()
   for _, win in ipairs(vim.api.nvim_list_wins()) do
     if vim.api.nvim_win_is_valid(win) then
       local buf = vim.api.nvim_win_get_buf(win)
       if vim.api.nvim_buf_is_valid(buf) then
         local ft = vim.api.nvim_buf_get_option(buf, "filetype")
-        -- Cerrar solo dapui_console, NO dap-repl
+        -- Close only dapui_console, NOT dap-repl
         if ft == "dapui_console" then
           pcall(vim.api.nvim_win_close, win, true)
-          log_to_console("🧹 Cerrada ventana DAP Console (dapui_console)", vim.log.levels.INFO)
+          log_to_console("🧹 Closed DAP Console window (dapui_console)", vim.log.levels.INFO)
           return true
         end
       end
@@ -574,7 +574,7 @@ function BufferManager.get_or_create_output_buffer()
   if not win then
     win = BufferManager.open_in_split(buf)
     _G.dap_remote_output_win = win
-    vim.notify("📋 Buffer de output remoto abierto en split inferior", vim.log.levels.INFO)
+    vim.notify("📋 Remote output buffer opened in bottom split", vim.log.levels.INFO)
   else
     _G.dap_remote_output_win = win
   end
@@ -632,12 +632,12 @@ local function get_binary_dir()
   local binary_dir = get_cmake_cache_var("CMAKE_BINARY_DIR")
 
   if binary_dir then
-    debug_log("✅ CMAKE_BINARY_DIR encontrado: " .. binary_dir, vim.log.levels.INFO)
+    debug_log("✅ CMAKE_BINARY_DIR found: " .. binary_dir, vim.log.levels.INFO)
     return binary_dir
   end
 
   -- Fallback: usar la ubicación del CMakeCache.txt mismo
-  debug_log("⚠️  CMAKE_BINARY_DIR no encontrado en cache, usando ubicación del CMakeCache.txt...", vim.log.levels.INFO)
+  debug_log("⚠️  CMAKE_BINARY_DIR not found in cache, using CMakeCache.txt location...", vim.log.levels.INFO)
 
   -- Buscar el buffer del CMakeCache.txt para obtener su ruta
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
@@ -730,29 +730,29 @@ end
 local function get_install_items_from_cmake()
   local binary_dir = get_binary_dir()
   if not binary_dir or binary_dir == "" then
-    log_to_console("❌ No se pudo determinar binary_dir desde CMakeCache.txt", vim.log.levels.ERROR)
+    log_to_console("❌ Could not determine binary_dir from CMakeCache.txt", vim.log.levels.ERROR)
     return {}
   end
 
-  log_to_console("📂 Leyendo archivos cmake_install.cmake desde: " .. binary_dir, vim.log.levels.INFO)
+  log_to_console("📂 Reading cmake_install.cmake files from: " .. binary_dir, vim.log.levels.INFO)
 
   -- Buscar TODOS los archivos cmake_install.cmake recursivamente
   local install_files = vim.fn.globpath(binary_dir, "**/cmake_install.cmake", false, true)
 
   if #install_files == 0 then
-    log_to_console("⚠️  No se encontraron archivos cmake_install.cmake en " .. binary_dir, vim.log.levels.WARN)
-    log_to_console("💡 ¿Has compilado el proyecto con CMake?", vim.log.levels.INFO)
+    log_to_console("⚠️  No cmake_install.cmake files found in " .. binary_dir, vim.log.levels.WARN)
+    log_to_console("💡 Have you compiled the project with CMake?", vim.log.levels.INFO)
     return {}
   end
 
-  log_to_console(string.format("🔍 Encontrados %d archivos cmake_install.cmake", #install_files), vim.log.levels.INFO)
+  log_to_console(string.format("🔍 Found %d cmake_install.cmake files", #install_files), vim.log.levels.INFO)
 
   local all_items = {}
   local seen = {}  -- Para evitar duplicados
 
   for _, install_file in ipairs(install_files) do
     local rel_path = install_file:gsub(binary_dir, ""):gsub("^/", "")
-    log_to_console(string.format("   📄 Parseando: %s", rel_path), vim.log.levels.DEBUG)
+    log_to_console(string.format("   📄 Parsing: %s", rel_path), vim.log.levels.DEBUG)
 
     local items = parse_cmake_install_file(install_file)
     for _, item in ipairs(items) do
@@ -766,7 +766,7 @@ local function get_install_items_from_cmake()
     end
   end
 
-  log_to_console(string.format("✅ Total: %d items únicos para instalar", #all_items), vim.log.levels.INFO)
+  log_to_console(string.format("✅ Total: %d unique items to install", #all_items), vim.log.levels.INFO)
   return all_items
 end
 
@@ -798,7 +798,7 @@ end
 local function get_all_install_items()
   local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
   if not source_dir then
-    log_to_console("⚠️  CMAKE_HOME_DIRECTORY no encontrado", vim.log.levels.WARN)
+    log_to_console("⚠️  CMAKE_HOME_DIRECTORY not found", vim.log.levels.WARN)
     return {}
   end
 
@@ -808,7 +808,7 @@ local function get_all_install_items()
   local cmake_files = vim.fn.globpath(source_dir, "**/CMakeLists.txt", false, true)
   local install_items = {}
 
-  log_to_console(string.format("🔍 Buscando install() directives en %d archivos CMakeLists.txt", #cmake_files), vim.log.levels.INFO)
+  log_to_console(string.format("🔍 Searching for install() directives in %d CMakeLists.txt files", #cmake_files), vim.log.levels.INFO)
 
   for _, cmake_file in ipairs(cmake_files) do
     -- Evitar archivos en out/ o build/
@@ -835,7 +835,7 @@ local function get_all_install_items()
           if #so_files > 0 then
             target_file = so_files[1]
           else
-            -- Buscar ejecutable
+            -- Search for executable
             local exe_path = build_dir .. "/" .. rel_dir .. "/" .. target_name
             if vim.fn.filereadable(exe_path) == 1 then
               target_file = exe_path
@@ -851,7 +851,7 @@ local function get_all_install_items()
               name = path_basename(target_file),
             })
           else
-            log_to_console(string.format("   ⚠️  Target no encontrado: %s (patrón: %s)", target_name, so_pattern), vim.log.levels.WARN)
+            log_to_console(string.format("   ⚠️  Target not found: %s (pattern: %s)", target_name, so_pattern), vim.log.levels.WARN)
           end
         end
       end
@@ -875,7 +875,7 @@ local function get_all_install_items()
               name = path_basename(source_path),
             })
           else
-            log_to_console(string.format("   ⚠️  Directorio no existe: %s", source_path), vim.log.levels.WARN)
+            log_to_console(string.format("   ⚠️  Directory does not exist: %s", source_path), vim.log.levels.WARN)
           end
         end
       end
@@ -900,7 +900,7 @@ local function get_all_install_items()
                 name = path_basename(file_path),
               })
             else
-              log_to_console(string.format("   ⚠️  Archivo no existe: %s", file_path), vim.log.levels.WARN)
+              log_to_console(string.format("   ⚠️  File does not exist: %s", file_path), vim.log.levels.WARN)
             end
           end
         end
@@ -908,7 +908,7 @@ local function get_all_install_items()
     end
   end
 
-  log_to_console(string.format("✅ Total: %d items para instalar", #install_items), vim.log.levels.INFO)
+  log_to_console(string.format("✅ Total: %d items to install", #install_items), vim.log.levels.INFO)
   return install_items
 end
 
@@ -926,7 +926,7 @@ local function get_install_destination(cmake_file, target_pattern)
   return destination
 end
 
--- Obtiene la ruta de instalación del ejecutable principal
+-- Gets the main executable installation path
 local function get_executable_install_path()
   local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
   if not source_dir then
@@ -971,12 +971,12 @@ end
 local function get_additional_install_dirs()
   local source_dir = get_cmake_cache_var("CMAKE_HOME_DIRECTORY")
   if not source_dir then
-    vim.notify("⚠️  CMAKE_HOME_DIRECTORY no encontrado", vim.log.levels.WARN)
+    vim.notify("⚠️  CMAKE_HOME_DIRECTORY not found", vim.log.levels.WARN)
     return {}
   end
 
   local manager_cmake = source_dir .. "/manager/CMakeLists.txt"
-  vim.notify(string.format("🔍 Buscando install(DIRECTORY) en: %s", manager_cmake), vim.log.levels.INFO)
+  vim.notify(string.format("🔍 Searching for install(DIRECTORY) en: %s", manager_cmake), vim.log.levels.INFO)
 
   if vim.fn.filereadable(manager_cmake) ~= 1 then
     vim.notify(string.format("⚠️  No se pudo leer: %s", manager_cmake), vim.log.levels.WARN)
@@ -1124,20 +1124,20 @@ local function upload_config_directories(target, final_callback)
   local additional_dirs = get_additional_install_dirs()
   if #additional_dirs == 0 then
     log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-    log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+    log_to_console("✅ DEPLOY COMPLETED SUCCESSFULLY", vim.log.levels.INFO)
     log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
     final_callback(target, nil)
     return
   end
 
-  log_to_console(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
+  log_to_console(string.format("📂 Uploading %d configuration director...", #additional_dirs), vim.log.levels.INFO)
 
   local dir_index = 1
   local function upload_next_directory()
     if dir_index > #additional_dirs then
       -- All directories uploaded
       log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-      log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+      log_to_console("✅ DEPLOY COMPLETED SUCCESSFULLY", vim.log.levels.INFO)
       log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
       final_callback(target, nil)
       return
@@ -1148,18 +1148,18 @@ local function upload_config_directories(target, final_callback)
     local dest_dir = dir_info.destination
     dir_index = dir_index + 1
 
-    log_to_console(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
+    log_to_console(string.format("🔍 Verifying: %s", source_dir), vim.log.levels.INFO)
 
     if vim.fn.isdirectory(source_dir) ~= 1 then
-      log_to_console(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
+      log_to_console(string.format("⚠️  Directory does not exist: %s", source_dir), vim.log.levels.WARN)
       upload_next_directory()
       return
     end
 
-    log_to_console(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
+    log_to_console(string.format("📁 Creating remote directory: %s", dest_dir), vim.log.levels.INFO)
     run_remote_async(string.format("mkdir -p %s", shell_quote(dest_dir)), function(mk_code, _)
       if mk_code ~= 0 then
-        log_to_console(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
+        log_to_console(string.format("⚠️  Could not create %s", dest_dir), vim.log.levels.WARN)
         upload_next_directory()
         return
       end
@@ -1180,13 +1180,13 @@ local function upload_config_directories(target, final_callback)
       -- rsync directory
       local remote_host = os.getenv("REMOTE_SSH_HOST")
       log_to_console(
-        string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir),
+        string.format("🔄 Executing: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir),
         vim.log.levels.INFO
       )
 
       rsync_async(source_dir, dest_dir, function(rsync_code, _)
         if rsync_code == 0 then
-          log_to_console(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
+          log_to_console(string.format("✓ Synchronized: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
         else
           log_to_console(
             string.format("⚠️  Falló sincronizar %s (code: %d)", path_basename(source_dir), rsync_code),
@@ -1205,16 +1205,16 @@ end
 local function deploy_all_install_items_async(final_callback)
   open_deploy_console()
 
-  log_to_console("📦 Leyendo información de instalación desde archivos generados por CMake...", vim.log.levels.INFO)
+  log_to_console("📦 Reading installation information from CMake-generated files...", vim.log.levels.INFO)
   log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   -- Obtener todos los items desde cmake_install.cmake (generados por CMake)
   local install_items = get_install_items_from_cmake()
 
   if #install_items == 0 then
-    log_to_console("⚠️  No se encontraron items para instalar", vim.log.levels.WARN)
+    log_to_console("⚠️  No items found to install", vim.log.levels.WARN)
     log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-    log_to_console("✅ DEPLOY COMPLETADO (sin items)", vim.log.levels.INFO)
+    log_to_console("✅ DEPLOY COMPLETED (no items)", vim.log.levels.INFO)
     log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
     final_callback(nil, nil)
     return
@@ -1238,8 +1238,8 @@ local function deploy_all_install_items_async(final_callback)
   end
 
   log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-  log_to_console(string.format("📦 Deploy optimizado: %d items agrupados en %d destinos", #install_items, vim.tbl_count(groups)), vim.log.levels.INFO)
-  log_to_console("⚡ Usando tar+ssh para transferencia rápida", vim.log.levels.INFO)
+  log_to_console(string.format("📦 Optimized deploy: %d items grouped into %d destinations", #install_items, vim.tbl_count(groups)), vim.log.levels.INFO)
+  log_to_console("⚡ Using tar+ssh for fast transfer", vim.log.levels.INFO)
 
   -- Convertir groups a array para iterar
   local group_list = {}
@@ -1252,7 +1252,7 @@ local function deploy_all_install_items_async(final_callback)
   local function deploy_next_group()
     if group_index > #group_list then
       log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-      log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+      log_to_console("✅ DEPLOY COMPLETED SUCCESSFULLY", vim.log.levels.INFO)
       log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
       final_callback("success", nil)
       return
@@ -1269,7 +1269,7 @@ local function deploy_all_install_items_async(final_callback)
     -- Crear directorio destino primero
     run_remote_async(string.format("mkdir -p %s", shell_quote(dest_dir)), function(mk_code, _)
       if mk_code ~= 0 then
-        log_to_console(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
+        log_to_console(string.format("⚠️  Could not create %s", dest_dir), vim.log.levels.WARN)
         deploy_next_group()
         return
       end
@@ -1290,13 +1290,13 @@ local function deploy_all_install_items_async(final_callback)
           if rsync_code == 0 then
             log_to_console(string.format("   ✓ %s/ -> %s", dir_item.name, dir_item.destination), vim.log.levels.INFO)
           else
-            log_to_console(string.format("   ⚠️  Falló rsync: %s", dir_item.name), vim.log.levels.WARN)
+            log_to_console(string.format("   ⚠️  rsync failed: %s", dir_item.name), vim.log.levels.WARN)
           end
           deploy_next_dir()
         end)
       end
 
-      -- Deployar archivos y ejecutables usando tar
+      -- Deploy files and executables using tar
       local function deploy_files_with_tar()
         local all_files = {}
         for _, f in ipairs(current.group.files) do
@@ -1332,7 +1332,7 @@ local function deploy_all_install_items_async(final_callback)
           shell_quote(dest_dir)
         )
 
-        log_to_console(string.format("   📦 Enviando %d archivos a %s con tar...", #all_files, dest_dir), vim.log.levels.INFO)
+        log_to_console(string.format("   📦 Sending %d files to %s with tar...", #all_files, dest_dir), vim.log.levels.INFO)
 
         vim.fn.jobstart(tar_cmd, {
           on_exit = function(_, exit_code, _)
@@ -1341,7 +1341,7 @@ local function deploy_all_install_items_async(final_callback)
                 log_to_console(string.format("   ✓ %s -> %s", f.name, f.destination), vim.log.levels.INFO)
               end
 
-              -- Hacer chmod +x a ejecutables
+              -- Make executables executable with chmod +x
               if #current.group.executables > 0 then
                 local chmod_files = {}
                 for _, ex in ipairs(current.group.executables) do
@@ -1355,7 +1355,7 @@ local function deploy_all_install_items_async(final_callback)
                 deploy_next_group()
               end
             else
-              log_to_console(string.format("   ⚠️  Falló tar transfer a %s", dest_dir), vim.log.levels.WARN)
+              log_to_console(string.format("   ⚠️  tar transfer failed to %s", dest_dir), vim.log.levels.WARN)
               deploy_next_group()
             end
           end,
@@ -1381,7 +1381,7 @@ local function ensure_remote_program_async(final_callback)
 
   local lpath = os.getenv("LOCAL_PROGRAM_PATH")
   if not lpath or vim.fn.filereadable(lpath) ~= 1 then
-    log_to_console("❌ LOCAL_PROGRAM_PATH no existe o no es legible", vim.log.levels.ERROR)
+    log_to_console("❌ LOCAL_PROGRAM_PATH does not exist or is not readable", vim.log.levels.ERROR)
     final_callback(nil, "LOCAL_PROGRAM_PATH no existe o no es legible")
     return
   end
@@ -1395,21 +1395,21 @@ local function ensure_remote_program_async(final_callback)
   local base = path_basename(lpath)
   local target = exe_install_path .. base
 
-  log_to_console(string.format("📦 Ruta ejecutable detectada: %s", exe_install_path), vim.log.levels.INFO)
+  log_to_console(string.format("📦 Executable path detected: %s", exe_install_path), vim.log.levels.INFO)
 
   -- Step 1: Create remote directory
   run_remote_async(string.format("mkdir -p %s", shell_quote(exe_install_path)), function(code, _)
     if code ~= 0 then
-      log_to_console("❌ No se pudo crear directorio remoto", vim.log.levels.ERROR)
+      log_to_console("❌ Could not create remote directory", vim.log.levels.ERROR)
       final_callback(nil, "No se pudo crear " .. exe_install_path)
       return
     end
 
     -- Step 2: Upload executable
-    log_to_console(string.format("📦 Subiendo ejecutable: %s -> %s", base, target), vim.log.levels.INFO)
+    log_to_console(string.format("📦 Uploading executable: %s -> %s", base, target), vim.log.levels.INFO)
     scp_upload_async(lpath, target, function(scp_code, scp_out)
       if scp_code ~= 0 then
-        log_to_console(string.format("❌ SCP falló: %s", scp_out), vim.log.levels.ERROR)
+        log_to_console(string.format("❌ SCP failed: %s", scp_out), vim.log.levels.ERROR)
         final_callback(nil, "SCP falló: " .. scp_out)
         return
       end
@@ -1417,11 +1417,11 @@ local function ensure_remote_program_async(final_callback)
       -- Step 3: Make executable
       run_remote_async(string.format("chmod +x %s", shell_quote(target)), function(ch_code, _)
         if ch_code ~= 0 then
-          log_to_console("❌ chmod +x falló en el target", vim.log.levels.ERROR)
+          log_to_console("❌ chmod +x failed on target", vim.log.levels.ERROR)
           final_callback(nil, "chmod +x falló en el target")
           return
         end
-        log_to_console(string.format("✅ Ejecutable desplegado: %s", target), vim.log.levels.INFO)
+        log_to_console(string.format("✅ Executable deployed: %s", target), vim.log.levels.INFO)
 
         -- Step 4: Find and upload plugins
         local cmake_cache_path = vim.fn.findfile("CMakeCache.txt", lpath .. ";")
@@ -1438,22 +1438,22 @@ local function ensure_remote_program_async(final_callback)
           end
         end
 
-        log_to_console(string.format("🔍 Buscando plugins en: %s/plugins", build_dir), vim.log.levels.INFO)
+        log_to_console(string.format("🔍 Searching for plugins in: %s/plugins", build_dir), vim.log.levels.INFO)
 
         local so_files = vim.fn.globpath(build_dir .. "/plugins", "**/*.so", false, true)
-        log_to_console(string.format("🔍 Encontrados %d archivo(s) .so", #so_files), vim.log.levels.INFO)
+        log_to_console(string.format("🔍 Found %d .so file(s)", #so_files), vim.log.levels.INFO)
 
         if #so_files > 0 then
           local plugin_path = get_plugin_install_path()
-          log_to_console(string.format("📦 Ruta de plugins detectada: %s", plugin_path), vim.log.levels.INFO)
+          log_to_console(string.format("📦 Plugin path detected: %s", plugin_path), vim.log.levels.INFO)
 
           -- Create plugin directory
           run_remote_async(string.format("mkdir -p %s", shell_quote(plugin_path)), function(mk_code, _)
             if mk_code ~= 0 then
-              log_to_console("⚠️  No se pudo crear directorio de plugins", vim.log.levels.WARN)
+              log_to_console("⚠️  Could not create directorio de plugins", vim.log.levels.WARN)
             end
 
-            log_to_console(string.format("📦 Subiendo %d plugin(s) .so...", #so_files), vim.log.levels.INFO)
+            log_to_console(string.format("📦 Uploading %d .so plugin(s)...", #so_files), vim.log.levels.INFO)
 
             -- Upload plugins sequentially (could be parallelized)
             local plugin_index = 1
@@ -1471,9 +1471,9 @@ local function ensure_remote_program_async(final_callback)
 
               scp_upload_async(so_file, remote_so, function(so_code, so_out)
                 if so_code ~= 0 then
-                  log_to_console(string.format("⚠️  Falló subir %s: %s", so_name, so_out), vim.log.levels.WARN)
+                  log_to_console(string.format("⚠️  Failed to upload %s: %s", so_name, so_out), vim.log.levels.WARN)
                 else
-                  log_to_console(string.format("✓ Subido: %s", so_name), vim.log.levels.INFO)
+                  log_to_console(string.format("✓ Uploaded: %s", so_name), vim.log.levels.INFO)
                 end
                 -- Continue with next plugin
                 upload_next_plugin()
@@ -1498,7 +1498,7 @@ local function ensure_remote_program()
 
   local lpath = os.getenv("LOCAL_PROGRAM_PATH")
   if not lpath or vim.fn.filereadable(lpath) ~= 1 then
-    log_to_console("❌ LOCAL_PROGRAM_PATH no existe o no es legible", vim.log.levels.ERROR)
+    log_to_console("❌ LOCAL_PROGRAM_PATH does not exist or is not readable", vim.log.levels.ERROR)
     return nil, "LOCAL_PROGRAM_PATH no existe o no es legible"
   end
 
@@ -1512,7 +1512,7 @@ local function ensure_remote_program()
   local base = path_basename(lpath)
   local target = exe_install_path .. base
 
-  log_to_console(string.format("📦 Ruta ejecutable detectada: %s", exe_install_path), vim.log.levels.INFO)
+  log_to_console(string.format("📦 Executable path detected: %s", exe_install_path), vim.log.levels.INFO)
 
   -- Crear directorio si no existe
   local exists_code = select(1, run_remote(string.format("test -d %s", shell_quote(exe_install_path))))
@@ -1524,19 +1524,19 @@ local function ensure_remote_program()
   end
 
   -- Upload ejecutable principal y hacer ejecutable
-  log_to_console(string.format("📦 Subiendo ejecutable: %s -> %s", base, target), vim.log.levels.INFO)
+  log_to_console(string.format("📦 Uploading executable: %s -> %s", base, target), vim.log.levels.INFO)
   local scp_code, scp_out = scp_upload(lpath, target)
   if scp_code ~= 0 then
-    log_to_console(string.format("❌ SCP falló: %s", scp_out), vim.log.levels.ERROR)
+    log_to_console(string.format("❌ SCP failed: %s", scp_out), vim.log.levels.ERROR)
     return nil, "SCP falló: " .. scp_out
   end
 
   local ch_code = select(1, run_remote(string.format("chmod +x %s", shell_quote(target))))
   if ch_code ~= 0 then
-    log_to_console("❌ chmod +x falló en el target", vim.log.levels.ERROR)
+    log_to_console("❌ chmod +x failed on target", vim.log.levels.ERROR)
     return nil, "chmod +x falló en el target"
   end
-  log_to_console(string.format("✅ Ejecutable desplegado: %s", target), vim.log.levels.INFO)
+  log_to_console(string.format("✅ Executable deployed: %s", target), vim.log.levels.INFO)
 
   -- Subir también los plugins .so del directorio de build
   -- Obtener el directorio raíz del build (donde está CMakeCache.txt)
@@ -1556,31 +1556,31 @@ local function ensure_remote_program()
     end
   end
 
-  log_to_console(string.format("🔍 Buscando plugins en: %s/plugins", build_dir), vim.log.levels.INFO)
+  log_to_console(string.format("🔍 Searching for plugins in: %s/plugins", build_dir), vim.log.levels.INFO)
 
   local so_files = vim.fn.globpath(build_dir .. "/plugins", "**/*.so", false, true)
-  log_to_console(string.format("🔍 Encontrados %d archivo(s) .so", #so_files), vim.log.levels.INFO)
+  log_to_console(string.format("🔍 Found %d .so file(s)", #so_files), vim.log.levels.INFO)
 
   if #so_files > 0 then
     -- Obtener ruta de instalación de plugins desde CMakeLists.txt
     local plugin_path = get_plugin_install_path()
-    log_to_console(string.format("📦 Ruta de plugins detectada: %s", plugin_path), vim.log.levels.INFO)
+    log_to_console(string.format("📦 Plugin path detected: %s", plugin_path), vim.log.levels.INFO)
 
     -- Crear directorio de plugins si no existe
     local mk_plugin_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(plugin_path))))
     if mk_plugin_code ~= 0 then
-      log_to_console("⚠️  No se pudo crear directorio de plugins", vim.log.levels.WARN)
+      log_to_console("⚠️  Could not create directorio de plugins", vim.log.levels.WARN)
     end
 
-    log_to_console(string.format("📦 Subiendo %d plugin(s) .so...", #so_files), vim.log.levels.INFO)
+    log_to_console(string.format("📦 Uploading %d .so plugin(s)...", #so_files), vim.log.levels.INFO)
     for _, so_file in ipairs(so_files) do
       local so_name = path_basename(so_file)
       local remote_so = plugin_path .. so_name
       local so_scp_code, so_scp_out = scp_upload(so_file, remote_so)
       if so_scp_code ~= 0 then
-        log_to_console(string.format("⚠️  Falló subir %s: %s", so_name, so_scp_out), vim.log.levels.WARN)
+        log_to_console(string.format("⚠️  Failed to upload %s: %s", so_name, so_scp_out), vim.log.levels.WARN)
       else
-        log_to_console(string.format("✓ Subido: %s", so_name), vim.log.levels.INFO)
+        log_to_console(string.format("✓ Uploaded: %s", so_name), vim.log.levels.INFO)
       end
     end
   end
@@ -1588,21 +1588,21 @@ local function ensure_remote_program()
   -- Subir directorios adicionales (config files, dbus, etc.)
   local additional_dirs = get_additional_install_dirs()
   if #additional_dirs > 0 then
-    log_to_console(string.format("📂 Subiendo %d directorio(s) de configuración...", #additional_dirs), vim.log.levels.INFO)
+    log_to_console(string.format("📂 Uploading %d configuration director...", #additional_dirs), vim.log.levels.INFO)
 
     for _, dir_info in ipairs(additional_dirs) do
       local source_dir = dir_info.source
       local dest_dir = dir_info.destination
 
       -- Verificar que el directorio fuente existe
-      log_to_console(string.format("🔍 Verificando: %s", source_dir), vim.log.levels.INFO)
+      log_to_console(string.format("🔍 Verifying: %s", source_dir), vim.log.levels.INFO)
 
       if vim.fn.isdirectory(source_dir) == 1 then
         -- Crear directorio destino si no existe
-        log_to_console(string.format("📁 Creando directorio remoto: %s", dest_dir), vim.log.levels.INFO)
+        log_to_console(string.format("📁 Creating remote directory: %s", dest_dir), vim.log.levels.INFO)
         local mk_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(dest_dir))))
         if mk_code ~= 0 then
-          log_to_console(string.format("⚠️  No se pudo crear %s", dest_dir), vim.log.levels.WARN)
+          log_to_console(string.format("⚠️  Could not create %s", dest_dir), vim.log.levels.WARN)
         else
           -- VALIDACIÓN: Evitar copiar a directorios críticos del sistema
           local dangerous_dirs = { "/usr/bin", "/bin", "/sbin", "/usr/sbin", "/lib", "/usr/lib" }
@@ -1632,11 +1632,11 @@ local function ensure_remote_program()
               dest_dir
             )
 
-            log_to_console(string.format("🔄 Ejecutando: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir), vim.log.levels.INFO)
+            log_to_console(string.format("🔄 Executing: rsync %s/ -> %s:%s/", path_basename(source_dir), remote_host, dest_dir), vim.log.levels.INFO)
           local rsync_result = vim.fn.system(rsync_cmd)
 
           if vim.v.shell_error == 0 then
-            log_to_console(string.format("✓ Sincronizado: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
+            log_to_console(string.format("✓ Synchronized: %s -> %s", path_basename(source_dir), dest_dir), vim.log.levels.INFO)
           else
             log_to_console(
               string.format("⚠️  Falló sincronizar %s (code: %d)", path_basename(source_dir), vim.v.shell_error),
@@ -1647,13 +1647,13 @@ local function ensure_remote_program()
           end -- fin if not is_dangerous
         end
       else
-        log_to_console(string.format("⚠️  Directorio no existe: %s", source_dir), vim.log.levels.WARN)
+        log_to_console(string.format("⚠️  Directory does not exist: %s", source_dir), vim.log.levels.WARN)
       end
     end
   end
 
   log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-  log_to_console("✅ DEPLOY COMPLETADO EXITOSAMENTE", vim.log.levels.INFO)
+  log_to_console("✅ DEPLOY COMPLETED SUCCESSFULLY", vim.log.levels.INFO)
   log_to_console("✅ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   return target, nil
@@ -1727,18 +1727,18 @@ end
 
 local function verify_gdbserver(gdb_port, output_file)
   -- Verificar proceso (BusyBox compatible)
-  log_to_console("🔍 Verificando estado de gdbserver...", vim.log.levels.INFO)
+  log_to_console("🔍 Verifying estado de gdbserver...", vim.log.levels.INFO)
   local check_cmd = build_ssh_command("ps | grep 'gdbserver :" .. gdb_port .. "' | grep -v grep")
   local check_result = vim.fn.system(check_cmd)
 
   if vim.v.shell_error ~= 0 or check_result == "" then
-    log_to_console("⚠️  Gdbserver no está corriendo en el host remoto", vim.log.levels.WARN)
+    log_to_console("⚠️  Gdbserver is not running on remote host", vim.log.levels.WARN)
 
     -- Leer output file para ver errores
     local error_check = build_ssh_command("cat " .. shell_quote(output_file) .. " 2>/dev/null | head -20")
     local error_output = vim.fn.system(error_check)
     if error_output ~= "" then
-      log_to_console("📄 Output de gdbserver:", vim.log.levels.WARN)
+      log_to_console("📄 gdbserver output:", vim.log.levels.WARN)
       for line in error_output:gmatch("[^\r\n]+") do
         log_to_console("   " .. line, vim.log.levels.WARN)
       end
@@ -1746,7 +1746,7 @@ local function verify_gdbserver(gdb_port, output_file)
     return false
   end
 
-  log_to_console("✅ Gdbserver está corriendo", vim.log.levels.INFO)
+  log_to_console("✅ Gdbserver is running", vim.log.levels.INFO)
 
   -- Verificar puerto
   local port_check =
@@ -1755,7 +1755,7 @@ local function verify_gdbserver(gdb_port, output_file)
 
   if vim.v.shell_error ~= 0 or not port_result:match(gdb_port) then
     log_to_console("⚠️  Puerto " .. gdb_port .. " puede no estar escuchando aún", vim.log.levels.WARN)
-    log_to_console("💡 Esto es normal - gdbserver espera la primera conexión para abrir el puerto", vim.log.levels.INFO)
+    log_to_console("💡 This is normal - gdbserver waits for first connection to open the port", vim.log.levels.INFO)
   else
     log_to_console("✅ Puerto " .. gdb_port .. " está escuchando", vim.log.levels.INFO)
   end
@@ -1784,7 +1784,7 @@ function OutputMonitor.setup(output_file)
   end
 
   if os.getenv("DAP_MONITOR_ENABLED") == "false" then
-    log_to_console("ℹ️  Monitoreo remoto deshabilitado", vim.log.levels.INFO)
+    log_to_console("ℹ️  Remote monitoring disabled", vim.log.levels.INFO)
     return
   end
 
@@ -1793,7 +1793,7 @@ function OutputMonitor.setup(output_file)
 
   -- Iniciar streaming con tail -f
   local tail_cmd = build_ssh_command("tail -f -n 0 " .. shell_quote(output_file) .. " 2>/dev/null")
-  log_to_console("🔍 Iniciando streaming de salida remota...", vim.log.levels.INFO)
+  log_to_console("🔍 Starting remote output streaming...", vim.log.levels.INFO)
 
   OutputMonitor.job_id = vim.fn.jobstart(tail_cmd, {
     on_stdout = function(_, lines)
@@ -1821,7 +1821,7 @@ function OutputMonitor.setup(output_file)
     end,
     on_exit = function(_, code)
       if code ~= 0 and OutputMonitor.active then
-        vim.notify("⚠️  Streaming de salida terminó (código: " .. code .. ")", vim.log.levels.WARN)
+        vim.notify("⚠️  Output streaming ended (code: " .. code .. ")", vim.log.levels.WARN)
       end
       OutputMonitor.job_id = nil
     end,
@@ -1876,10 +1876,10 @@ local function resolve_program_or_prompt(envvar, default_path, cb)
 
   vim.ui.input({ prompt = "Ruta del ejecutable:", default = default_path or "" }, function(answer)
     if not answer or answer == "" then
-      return vim.notify("❌ No se proporcionó ejecutable y $" .. envvar .. " no está definida", vim.log.levels.ERROR)
+      return vim.notify("❌ No executable provided and $" .. envvar .. " is not defined", vim.log.levels.ERROR)
     end
     if vim.fn.filereadable(answer) ~= 1 then
-      return vim.notify("❌ El ejecutable no existe/legible: " .. answer, vim.log.levels.ERROR)
+      return vim.notify("❌ Executable does not exist/not readable: " .. answer, vim.log.levels.ERROR)
     end
     vim.fn.setenv(envvar, answer)
     cb(answer)
@@ -1890,7 +1890,7 @@ function _G.dap_remote_debug()
   -- Abrir consola de logs
   open_deploy_console()
 
-  log_to_console("🐛 Iniciando sesión de debugging remoto...", vim.log.levels.INFO)
+  log_to_console("🐛 Starting remote debugging session...", vim.log.levels.INFO)
   log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   -- Cargar variables desde CMakeCache.txt
@@ -1901,14 +1901,14 @@ function _G.dap_remote_debug()
 
   -- Verificar que existan en CMakeCache.txt
   if not ssh_pass then
-    log_to_console("❌ REMOTE_SSH_PASS no encontrada en CMakeCache.txt", vim.log.levels.ERROR)
-    log_to_console("💡 ¿Configuraste el proyecto con un preset que tenga REMOTE_SSH_PASS?", vim.log.levels.INFO)
-    return vim.notify("❌ REMOTE_SSH_PASS no encontrada en CMakeCache.txt", vim.log.levels.ERROR)
+    log_to_console("❌ REMOTE_SSH_PASS not found in CMakeCache.txt", vim.log.levels.ERROR)
+    log_to_console("💡 Did you configure the project with a preset that has REMOTE_SSH_PASS?", vim.log.levels.INFO)
+    return vim.notify("❌ REMOTE_SSH_PASS not found in CMakeCache.txt", vim.log.levels.ERROR)
   end
   if not ssh_host then
-    log_to_console("❌ REMOTE_SSH_HOST no encontrada en CMakeCache.txt", vim.log.levels.ERROR)
-    log_to_console("💡 ¿Configuraste el proyecto con un preset que tenga REMOTE_SSH_HOST?", vim.log.levels.INFO)
-    return vim.notify("❌ REMOTE_SSH_HOST no encontrada en CMakeCache.txt", vim.log.levels.ERROR)
+    log_to_console("❌ REMOTE_SSH_HOST not found in CMakeCache.txt", vim.log.levels.ERROR)
+    log_to_console("💡 Did you configure the project with a preset that has REMOTE_SSH_HOST?", vim.log.levels.INFO)
+    return vim.notify("❌ REMOTE_SSH_HOST not found in CMakeCache.txt", vim.log.levels.ERROR)
   end
 
   -- Setear variables de entorno
@@ -1917,18 +1917,18 @@ function _G.dap_remote_debug()
   vim.env.REMOTE_SSH_PORT = ssh_port or DEFAULT_SSH_PORT
   vim.env.REMOTE_GDBSERVER_PORT = gdb_port or DEFAULT_GDB_PORT
 
-  -- Mostrar configuración SSH
-  log_to_console("📡 Configuración SSH:", vim.log.levels.INFO)
+  -- Show SSH configuration
+  log_to_console("📡 SSH Configuration:", vim.log.levels.INFO)
   log_to_console("   Host: " .. ssh_host, vim.log.levels.INFO)
-  log_to_console("   Puerto SSH: " .. (ssh_port or DEFAULT_SSH_PORT), vim.log.levels.INFO)
-  log_to_console("   Puerto GDB: " .. (gdb_port or DEFAULT_GDB_PORT), vim.log.levels.INFO)
+  log_to_console("   SSH Port: " .. (ssh_port or DEFAULT_SSH_PORT), vim.log.levels.INFO)
+  log_to_console("   GDB Port: " .. (gdb_port or DEFAULT_GDB_PORT), vim.log.levels.INFO)
   log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   -- Solicitar argumentos
   vim.ui.input({ prompt = "Argumentos de ejecución:", default = "" }, function(input_args)
     if input_args == nil then
-      log_to_console("❌ Depuración cancelada", vim.log.levels.WARN)
-      return vim.notify("❌ Depuración cancelada", vim.log.levels.WARN)
+      log_to_console("❌ Debugging cancelled", vim.log.levels.WARN)
+      return vim.notify("❌ Debugging cancelled", vim.log.levels.WARN)
     end
 
     local args = {}
@@ -1950,7 +1950,7 @@ function _G.dap_remote_debug()
           return vim.notify("❌ " .. err, vim.log.levels.ERROR)
         end
 
-        -- Crear configuración DAP
+        -- Create DAP configuration
         local gdb_port = os.getenv("REMOTE_GDBSERVER_PORT") or DEFAULT_GDB_PORT
         local target = vim.deepcopy(create_base_dap_config())
 
@@ -1965,23 +1965,23 @@ function _G.dap_remote_debug()
       -- Validar que el GDB path existe y es ejecutable
       if not target.miDebuggerPath or vim.fn.executable(target.miDebuggerPath) ~= 1 then
         local gdb_var = os.getenv("GDB") or os.getenv("LOCAL_GDB_PATH") or "gdb"
-        log_to_console("❌ ERROR: GDB no encontrado", vim.log.levels.ERROR)
-        log_to_console("   Buscando: " .. gdb_var, vim.log.levels.ERROR)
-        log_to_console("   Ruta resuelta: " .. (target.miDebuggerPath or "NONE"), vim.log.levels.ERROR)
+        log_to_console("❌ ERROR: GDB not found", vim.log.levels.ERROR)
+        log_to_console("   Searching for: " .. gdb_var, vim.log.levels.ERROR)
+        log_to_console("   Resolved path: " .. (target.miDebuggerPath or "NONE"), vim.log.levels.ERROR)
         log_to_console("", vim.log.levels.ERROR)
-        log_to_console("💡 Solución:", vim.log.levels.INFO)
+        log_to_console("💡 Solution:", vim.log.levels.INFO)
         log_to_console("   1. Configura la variable GDB con la ruta completa:", vim.log.levels.INFO)
         log_to_console("      export GDB=/ruta/a/tu/gdb", vim.log.levels.INFO)
         log_to_console("   2. O asegúrate que el comando esté en el PATH", vim.log.levels.INFO)
-        return vim.notify("❌ GDB no encontrado: " .. gdb_var, vim.log.levels.ERROR)
+        return vim.notify("❌ GDB not found: " .. gdb_var, vim.log.levels.ERROR)
       end
 
       -- Log DAP configuration
       log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-      log_to_console("🔧 Configuración DAP:", vim.log.levels.INFO)
-      log_to_console("   GDB Local: " .. target.miDebuggerPath, vim.log.levels.INFO)
-      log_to_console("   GDB Remote: " .. target.miDebuggerServerAddress, vim.log.levels.INFO)
-      log_to_console("   Programa: " .. target.program, vim.log.levels.INFO)
+      log_to_console("🔧 DAP Configuration:", vim.log.levels.INFO)
+      log_to_console("   Local GDB: " .. target.miDebuggerPath, vim.log.levels.INFO)
+      log_to_console("   Remote GDB: " .. target.miDebuggerServerAddress, vim.log.levels.INFO)
+      log_to_console("   Program: " .. target.program, vim.log.levels.INFO)
       if #target.args > 0 then
         log_to_console("   Args: " .. table.concat(target.args, " "), vim.log.levels.INFO)
       end
@@ -1993,7 +1993,7 @@ function _G.dap_remote_debug()
       local script_file = output_base .. ".sh"
 
       -- Crear script de gdbserver
-      log_to_console("📝 Preparando gdbserver remoto...", vim.log.levels.INFO)
+      log_to_console("📝 Preparing remote gdbserver...", vim.log.levels.INFO)
       local gdb_command, create_err = create_gdbserver_script(script_file, gdb_port, rprog, args)
       if not gdb_command then
         log_to_console("❌ " .. create_err, vim.log.levels.ERROR)
@@ -2001,26 +2001,26 @@ function _G.dap_remote_debug()
       end
 
       -- Iniciar gdbserver
-      log_to_console("🚀 Iniciando gdbserver remoto...", vim.log.levels.INFO)
-      log_to_console("📋 Comando: " .. gdb_command, vim.log.levels.DEBUG)
+      log_to_console("🚀 Starting remote gdbserver...", vim.log.levels.INFO)
+      log_to_console("📋 Command: " .. gdb_command, vim.log.levels.DEBUG)
 
       local gdbserver_pid, start_err = start_gdbserver(script_file, output_file, gdb_port)
       if not gdbserver_pid then
         log_to_console("❌ " .. start_err, vim.log.levels.ERROR)
-        log_to_console("💡 Ejecuta :DapRemoteDiagnostic para más información", vim.log.levels.INFO)
+        log_to_console("💡 Run :DapRemoteDiagnostic for more information", vim.log.levels.INFO)
         return
       end
 
-      log_to_console("✅ Gdbserver iniciado (PID: " .. gdbserver_pid .. ")", vim.log.levels.INFO)
+      log_to_console("✅ Gdbserver started (PID: " .. gdbserver_pid .. ")", vim.log.levels.INFO)
       log_to_console("📁 Output: " .. output_file, vim.log.levels.DEBUG)
 
       -- Esperar a que gdbserver esté listo
       local wait_ms = tonumber(os.getenv("DEBUG_WAIT_TIME")) or DEFAULT_WAIT_TIME
-      log_to_console("⏳ Esperando " .. (wait_ms / 1000) .. " s para que gdbserver escuche...", vim.log.levels.INFO)
+      log_to_console("⏳ Waiting " .. (wait_ms / 1000) .. " s for gdbserver to listen...", vim.log.levels.INFO)
 
       vim.defer_fn(function()
         verify_gdbserver(gdb_port, output_file)
-        log_to_console("🛰️ Conectando depurador...", vim.log.levels.INFO)
+        log_to_console("🛰️ Connecting debugger...", vim.log.levels.INFO)
         log_to_console(
           "ℹ️  Si ves 'Cursor position outside buffer', recompila el ejecutable con símbolos de debug (-g)",
           vim.log.levels.INFO
@@ -2031,38 +2031,38 @@ function _G.dap_remote_debug()
 
         -- Registrar listeners de DAP para debugging
         dap.listeners.after.event_initialized["remote_debug_log"] = function()
-          log_to_console("🎯 DAP inicializado - sesión de debug activa", vim.log.levels.INFO)
+          log_to_console("🎯 DAP initialized - debug session active", vim.log.levels.INFO)
         end
 
         dap.listeners.after.event_stopped["remote_debug_log"] = function(session, body)
           local reason = body.reason or "unknown"
-          log_to_console("⏸️  Ejecución pausada: " .. reason, vim.log.levels.INFO)
+          log_to_console("⏸️  Execution paused: " .. reason, vim.log.levels.INFO)
         end
 
         dap.listeners.after.event_terminated["remote_debug_log"] = function()
-          log_to_console("🛑 Sesión de debug terminada", vim.log.levels.WARN)
+          log_to_console("🛑 Debug session terminated", vim.log.levels.WARN)
         end
 
         dap.listeners.after.event_exited["remote_debug_log"] = function(session, body)
           local code = body and body.exitCode or "unknown"
-          log_to_console("🚪 Programa terminó con código: " .. tostring(code), vim.log.levels.INFO)
+          log_to_console("🚪 Program exited with code: " .. tostring(code), vim.log.levels.INFO)
 
           -- Si el programa terminó con error, mostrar los logs del output remoto
           if code ~= 0 and code ~= "unknown" then
             log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.ERROR)
-            log_to_console("❌ Error detectado - Capturando logs del programa remoto:", vim.log.levels.ERROR)
+            log_to_console("❌ Error detected - Capturing remote program logs:", vim.log.levels.ERROR)
 
             -- Leer el archivo de output remoto
             local read_cmd = build_ssh_command(string.format("cat %s 2>/dev/null | tail -30", shell_quote(output_file)))
             local output = vim.fn.system(read_cmd)
 
             if vim.v.shell_error == 0 and output ~= "" then
-              log_to_console("📄 Últimas 30 líneas de " .. output_file .. ":", vim.log.levels.ERROR)
+              log_to_console("📄 Last 30 lines from " .. output_file .. ":", vim.log.levels.ERROR)
               for line in output:gmatch("[^\r\n]+") do
                 log_to_console("   " .. line, vim.log.levels.ERROR)
               end
             else
-              log_to_console("⚠️  No se pudo leer el archivo de output remoto", vim.log.levels.WARN)
+              log_to_console("⚠️  Could not read remote output file", vim.log.levels.WARN)
             end
             log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.ERROR)
           end
@@ -2074,7 +2074,7 @@ function _G.dap_remote_debug()
         dap.listeners.before.disconnect["dapui_monitor"] = OutputMonitor.cleanup
 
         log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
-        log_to_console("🚀 Llamando a dap.run()...", vim.log.levels.INFO)
+        log_to_console("🚀 Calling dap.run()...", vim.log.levels.INFO)
 
         -- Iniciar DAP
         local ok, err = pcall(function()
@@ -2082,18 +2082,18 @@ function _G.dap_remote_debug()
         end)
 
         if not ok then
-          log_to_console("❌ Error al iniciar DAP: " .. tostring(err), vim.log.levels.ERROR)
-          return vim.notify("❌ Error al iniciar DAP: " .. tostring(err), vim.log.levels.ERROR)
+          log_to_console("❌ Error starting DAP: " .. tostring(err), vim.log.levels.ERROR)
+          return vim.notify("❌ Error starting DAP: " .. tostring(err), vim.log.levels.ERROR)
         end
 
         -- Verificar que la sesión se inició
         vim.defer_fn(function()
           local session = dap.session()
           if not session then
-            log_to_console("⚠️  ADVERTENCIA: No hay sesión DAP activa después de 1 segundo", vim.log.levels.WARN)
-            log_to_console("💡 Revisa los logs de DAP para ver errores", vim.log.levels.INFO)
+            log_to_console("⚠️  WARNING: No DAP session active after 1 second", vim.log.levels.WARN)
+            log_to_console("💡 Check DAP logs for errors", vim.log.levels.INFO)
           else
-            log_to_console("✅ Sesión DAP confirmada activa", vim.log.levels.INFO)
+            log_to_console("✅ DAP session confirmed active", vim.log.levels.INFO)
 
             -- Cerrar la consola de deploy, ventanas vacías y DAP Console (pero mantener DAP REPL)
             vim.defer_fn(function()
@@ -2162,7 +2162,7 @@ vim.api.nvim_create_user_command("DapShowOutput", function()
   local buf = BufferManager.find_by_name(REMOTE_OUTPUT_BUFFER_NAME)
 
   if not buf then
-    vim.notify("⚠️  No hay buffer de output remoto. Inicia un debug remoto primero.", vim.log.levels.WARN)
+    vim.notify("⚠️  No remote output buffer. Start remote debug first.", vim.log.levels.WARN)
     return
   end
 
@@ -2170,10 +2170,10 @@ vim.api.nvim_create_user_command("DapShowOutput", function()
 
   if win then
     vim.api.nvim_set_current_win(win)
-    vim.notify("📋 Ventana de output enfocada", vim.log.levels.INFO)
+    vim.notify("📋 Output window focused", vim.log.levels.INFO)
   else
     BufferManager.open_in_split(buf)
-    vim.notify("✅ Buffer de output abierto", vim.log.levels.INFO)
+    vim.notify("✅ Output buffer opened", vim.log.levels.INFO)
   end
 end, { desc = "Abrir buffer de output remoto" })
 
@@ -2197,9 +2197,9 @@ vim.keymap.set("n", "<leader>du", ":DapUIToggle<CR>", { desc = "Toggle DAP UI" }
 vim.api.nvim_create_user_command("DapCleanupMonitor", function()
   if OutputMonitor.active then
     OutputMonitor.cleanup()
-    vim.notify("✅ Streaming de monitoreo detenido", vim.log.levels.INFO)
+    vim.notify("✅ Monitor streaming stopped", vim.log.levels.INFO)
   else
-    vim.notify("ℹ️  No hay streaming activo", vim.log.levels.INFO)
+    vim.notify("ℹ️  No active streaming", vim.log.levels.INFO)
   end
 end, { desc = "Detener streaming de monitoreo remoto" })
 
@@ -2211,7 +2211,7 @@ vim.api.nvim_create_user_command("DapMonitorStatus", function()
       vim.log.levels.INFO
     )
   else
-    vim.notify("ℹ️  Monitoreo inactivo", vim.log.levels.INFO)
+    vim.notify("ℹ️  Monitoring inactive", vim.log.levels.INFO)
   end
 end, { desc = "Estado del monitoreo remoto" })
 
@@ -2231,10 +2231,10 @@ function _G.deploy_remote_program()
 
   -- Verificar que existan en CMakeCache.txt
   if not ssh_pass then
-    return vim.notify("❌ REMOTE_SSH_PASS no encontrada en CMakeCache.txt. ¿Configuraste el preset correcto?", vim.log.levels.ERROR)
+    return vim.notify("❌ REMOTE_SSH_PASS not found in CMakeCache.txt. Did you configure the correct preset?", vim.log.levels.ERROR)
   end
   if not ssh_host then
-    return vim.notify("❌ REMOTE_SSH_HOST no encontrada en CMakeCache.txt. ¿Configuraste el preset correcto?", vim.log.levels.ERROR)
+    return vim.notify("❌ REMOTE_SSH_HOST not found in CMakeCache.txt. Did you configure the correct preset?", vim.log.levels.ERROR)
   end
 
   -- Setear variables de entorno para que las funciones SSH las usen
@@ -2246,16 +2246,16 @@ function _G.deploy_remote_program()
   deploy_all_install_items_async(function(result, err)
     if err then
       log_to_console("❌ " .. tostring(err), vim.log.levels.ERROR)
-      vim.notify("❌ Deploy falló: " .. tostring(err), vim.log.levels.ERROR)
+      vim.notify("❌ Deploy failed: " .. tostring(err), vim.log.levels.ERROR)
     else
-      vim.notify("✅ Deploy completado", vim.log.levels.INFO)
+      vim.notify("✅ Deploy completed", vim.log.levels.INFO)
     end
   end)
 end
 
 -- Show GDB setup commands
 vim.api.nvim_create_user_command("DapShowGdbCommands", function()
-  vim.notify("🔧 Comandos GDB que se ejecutarán:", vim.log.levels.INFO)
+  vim.notify("🔧 GDB commands that will be executed:", vim.log.levels.INFO)
   local commands = get_gdb_setup_commands()
   for i, cmd in ipairs(commands) do
     vim.notify(string.format("  %d. %s", i, cmd.text), vim.log.levels.INFO)
@@ -2264,7 +2264,7 @@ vim.api.nvim_create_user_command("DapShowGdbCommands", function()
   local toolchain_path = os.getenv("OECORE_TARGET_SYSROOT")
   if toolchain_path and toolchain_path ~= "" then
     vim.notify("", vim.log.levels.INFO)
-    vim.notify("📚 Pretty printers detectados:", vim.log.levels.INFO)
+    vim.notify("📚 Pretty printers detected:", vim.log.levels.INFO)
     vim.notify("  - set auto-load safe-path /", vim.log.levels.INFO)
     vim.notify("  - set auto-load yes", vim.log.levels.INFO)
     vim.notify(
@@ -2274,14 +2274,14 @@ vim.api.nvim_create_user_command("DapShowGdbCommands", function()
     vim.notify("  - python import zo_pretty_printers...", vim.log.levels.INFO)
   else
     vim.notify("", vim.log.levels.INFO)
-    vim.notify("⚠️  No se detectó OECORE_TARGET_SYSROOT, pretty printers no disponibles", vim.log.levels.WARN)
+    vim.notify("⚠️  OECORE_TARGET_SYSROOT not detected, pretty printers not available", vim.log.levels.WARN)
   end
 end, { desc = "Mostrar comandos GDB que se ejecutarán" })
 
 -- Close deploy console
 vim.api.nvim_create_user_command("DapCloseDeployConsole", function()
   _G.close_deploy_console()
-  vim.notify("✅ Consola de deploy cerrada", vim.log.levels.INFO)
+  vim.notify("✅ Deploy console closed", vim.log.levels.INFO)
 end, { desc = "Cerrar ventana de logs de deploy" })
 
 -- Diagnostic command
@@ -2289,7 +2289,7 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   -- Abrir consola de logs
   open_deploy_console()
 
-  log_to_console("🔍 Diagnóstico de Debugging Remoto", vim.log.levels.INFO)
+  log_to_console("🔍 Remote Debugging Diagnostic", vim.log.levels.INFO)
   log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   -- Cargar variables desde CMakeCache.txt
@@ -2300,12 +2300,12 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
 
   -- Verificar variables requeridas
   if not ssh_pass then
-    log_to_console("❌ REMOTE_SSH_PASS no encontrada en CMakeCache.txt", vim.log.levels.ERROR)
-    log_to_console("💡 ¿Configuraste el proyecto con un preset que tenga REMOTE_SSH_PASS?", vim.log.levels.INFO)
+    log_to_console("❌ REMOTE_SSH_PASS not found in CMakeCache.txt", vim.log.levels.ERROR)
+    log_to_console("💡 Did you configure the project with a preset that has REMOTE_SSH_PASS?", vim.log.levels.INFO)
     return
   end
   if not ssh_host then
-    log_to_console("❌ REMOTE_SSH_HOST no encontrada en CMakeCache.txt", vim.log.levels.ERROR)
+    log_to_console("❌ REMOTE_SSH_HOST not found in CMakeCache.txt", vim.log.levels.ERROR)
     return
   end
 
@@ -2320,12 +2320,12 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   local port = ssh_port or DEFAULT_SSH_PORT
   gdb_port = gdb_port or DEFAULT_GDB_PORT
 
-  -- Mostrar fuente de configuración
+  -- Show configuration source
   local cmake_cache = get_cmake_cache_var("CMAKE_CACHEFILE_DIR")
   if cmake_cache then
-    log_to_console(string.format("📋 Configuración desde: %s/CMakeCache.txt", cmake_cache), vim.log.levels.INFO)
+    log_to_console(string.format("📋 Configuration from: %s/CMakeCache.txt", cmake_cache), vim.log.levels.INFO)
   else
-    log_to_console("⚠️  No se encontró CMakeCache.txt", vim.log.levels.WARN)
+    log_to_console("⚠️  CMakeCache.txt not found", vim.log.levels.WARN)
   end
   log_to_console("", vim.log.levels.INFO)
 
@@ -2343,7 +2343,7 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   end
 
   if not host then
-    log_to_console("❌ REMOTE_SSH_HOST no definida. No se pueden hacer más verificaciones.", vim.log.levels.ERROR)
+    log_to_console("❌ REMOTE_SSH_HOST not defined. No se pueden hacer más verificaciones.", vim.log.levels.ERROR)
     return
   end
 
@@ -2370,7 +2370,7 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   -- Mostrar directorios adicionales
   local additional_dirs = get_additional_install_dirs()
   if #additional_dirs > 0 then
-    log_to_console(string.format("   Directorios de config: %d detectados", #additional_dirs), vim.log.levels.INFO)
+    log_to_console(string.format("   Config directories: %d detected", #additional_dirs), vim.log.levels.INFO)
     for _, dir_info in ipairs(additional_dirs) do
       log_to_console(string.format("      • %s -> %s", path_basename(dir_info.source), dir_info.destination), vim.log.levels.INFO)
     end
@@ -2389,14 +2389,14 @@ vim.api.nvim_create_user_command("DapRemoteDiagnostic", function()
   local gdb_check = build_ssh_command("which gdbserver")
   local gdb_path = vim.fn.system(gdb_check)
   if vim.v.shell_error == 0 then
-    log_to_console("✅ Gdbserver encontrado en: " .. vim.trim(gdb_path), vim.log.levels.INFO)
+    log_to_console("✅ Gdbserver found at: " .. vim.trim(gdb_path), vim.log.levels.INFO)
   else
     log_to_console("❌ Gdbserver NO instalado en el host remoto", vim.log.levels.ERROR)
     log_to_console("💡 Instala con: ssh root@" .. host .. " 'apt-get install gdbserver'", vim.log.levels.INFO)
   end
 
   -- Procesos activos (BusyBox compatible)
-  log_to_console("🔍 Buscando procesos gdbserver...", vim.log.levels.INFO)
+  log_to_console("🔍 Searching for procesos gdbserver...", vim.log.levels.INFO)
   local ps_check = build_ssh_command("ps | grep gdbserver | grep -v grep")
   local ps_result = vim.fn.system(ps_check)
   if vim.v.shell_error == 0 and ps_result ~= "" then
