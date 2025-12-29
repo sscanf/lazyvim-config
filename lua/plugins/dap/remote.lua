@@ -1692,22 +1692,49 @@ local function create_gdbserver_script(script_file, gdb_port, rprog, args)
   local result = vim.fn.system(create_cmd)
 
   if vim.v.shell_error ~= 0 then
-    return nil, "Error preparando script: " .. result
+    return nil, "Error preparing script: " .. result
   end
 
   return gdb_command
 end
 
-local function start_gdbserver(script_file, output_file, gdb_port)
-  -- BusyBox compatible: ps sin opciones, PID está en columna 1
-  local kill_cmd = string.format(
-    "ps | grep 'gdbserver :%s' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null || true",
-    gdb_port
+-- Cleanup function: kills gdbserver and debugged process
+local function cleanup_remote_debug_processes(program_name, gdb_port)
+  log_to_console("🧹 Cleaning up previous debug session...", vim.log.levels.INFO)
+
+  -- Kill all gdbserver processes
+  local kill_gdbserver = string.format(
+    "ps | grep 'gdbserver' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null || true"
   )
 
+  -- Kill the debugged program by name (if running)
+  local kill_program = ""
+  if program_name and program_name ~= "" then
+    kill_program = string.format(
+      "; ps | grep '%s' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null || true",
+      program_name
+    )
+  end
+
+  local cleanup_cmd = kill_gdbserver .. kill_program
+  local ssh_cmd = build_ssh_command(cleanup_cmd)
+
+  if ssh_cmd then
+    local result = vim.fn.system(ssh_cmd)
+    if vim.v.shell_error == 0 then
+      log_to_console("✅ Previous processes cleaned up", vim.log.levels.INFO)
+    else
+      log_to_console("⚠️  Cleanup completed with warnings: " .. vim.trim(result), vim.log.levels.WARN)
+    end
+  end
+
+  -- Wait a moment for processes to die
+  vim.cmd("sleep 500m")
+end
+
+local function start_gdbserver(script_file, output_file, gdb_port)
   local cmd = string.format(
-    "%s; rm -f %s; touch %s; nohup %s >> %s 2>&1 & echo $!",
-    kill_cmd,
+    "rm -f %s; touch %s; nohup %s >> %s 2>&1 & echo $!",
     shell_quote(output_file),
     shell_quote(output_file),
     shell_quote(script_file),
@@ -1716,7 +1743,7 @@ local function start_gdbserver(script_file, output_file, gdb_port)
 
   local ssh_cmd = build_ssh_command(cmd)
   if not ssh_cmd then
-    return nil, "Error construyendo comando SSH"
+    return nil, "Error building SSH command"
   end
 
   local result = vim.fn.system(ssh_cmd)
@@ -1761,7 +1788,7 @@ local function verify_gdbserver(gdb_port, output_file)
     log_to_console("⚠️  Puerto " .. gdb_port .. " puede no estar escuchando aún", vim.log.levels.WARN)
     log_to_console("💡 This is normal - gdbserver waits for first connection to open the port", vim.log.levels.INFO)
   else
-    log_to_console("✅ Puerto " .. gdb_port .. " está escuchando", vim.log.levels.INFO)
+    log_to_console("✅ Puerto " .. gdb_port .. " is listening", vim.log.levels.INFO)
   end
 
   return true
@@ -1929,7 +1956,7 @@ function _G.dap_remote_debug()
   log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
 
   -- Solicitar argumentos
-  vim.ui.input({ prompt = "Argumentos de ejecución:", default = "" }, function(input_args)
+  vim.ui.input({ prompt = "Execution arguments: ", default = "" }, function(input_args)
     if input_args == nil then
       log_to_console("❌ Debugging cancelled", vim.log.levels.WARN)
       return vim.notify("❌ Debugging cancelled", vim.log.levels.WARN)
@@ -1996,7 +2023,11 @@ function _G.dap_remote_debug()
       local output_file = output_base .. ".output"
       local script_file = output_base .. ".sh"
 
-      -- Crear script de gdbserver
+      -- Cleanup any previous debug session
+      local program_name = path_basename(rprog)
+      cleanup_remote_debug_processes(program_name, gdb_port)
+
+      -- Create gdbserver script
       log_to_console("📝 Preparing remote gdbserver...", vim.log.levels.INFO)
       local gdb_command, create_err = create_gdbserver_script(script_file, gdb_port, rprog, args)
       if not gdb_command then
@@ -2018,7 +2049,7 @@ function _G.dap_remote_debug()
       log_to_console("✅ Gdbserver started (PID: " .. gdbserver_pid .. ")", vim.log.levels.INFO)
       log_to_console("📁 Output: " .. output_file, vim.log.levels.DEBUG)
 
-      -- Esperar a que gdbserver esté listo
+      -- Wait for gdbserver to be ready
       local wait_ms = tonumber(os.getenv("DEBUG_WAIT_TIME")) or DEFAULT_WAIT_TIME
       log_to_console("⏳ Waiting " .. (wait_ms / 1000) .. " s for gdbserver to listen...", vim.log.levels.INFO)
 
@@ -2076,6 +2107,16 @@ function _G.dap_remote_debug()
         dap.listeners.before.event_terminated["dapui_monitor"] = OutputMonitor.cleanup
         dap.listeners.before.event_exited["dapui_monitor"] = OutputMonitor.cleanup
         dap.listeners.before.disconnect["dapui_monitor"] = OutputMonitor.cleanup
+
+        -- Cleanup remote processes when debug session ends
+        dap.listeners.after.event_terminated["remote_cleanup"] = function()
+          log_to_console("🧹 Cleaning up remote gdbserver...", vim.log.levels.INFO)
+          cleanup_remote_debug_processes(program_name, gdb_port)
+        end
+        dap.listeners.after.event_exited["remote_cleanup"] = function()
+          log_to_console("🧹 Cleaning up remote processes...", vim.log.levels.INFO)
+          cleanup_remote_debug_processes(program_name, gdb_port)
+        end
 
         log_to_console("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", vim.log.levels.INFO)
         log_to_console("🚀 Calling dap.run()...", vim.log.levels.INFO)
