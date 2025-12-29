@@ -558,19 +558,57 @@ Shows all GDB setup commands including:
 - Check compilation was done with debug symbols (`-g`)
 - Use `:DapRemoteDiagnostic` to verify paths
 
-### Keymaps for Debugging
+### Debugging Keybindings
 
-| Key | Action |
-|-----|--------|
-| `<leader>dR` | Start remote debug (with arguments) |
-| `<leader>db` | Toggle breakpoint |
-| `<leader>dB` | Conditional breakpoint |
-| `<leader>dc` | Continue execution |
-| `<leader>di` | Step into |
-| `<leader>do` | Step over |
-| `<leader>dO` | Step out |
-| `<leader>dt` | Terminate debugging |
-| `<leader>du` | Toggle DAP UI |
+#### Core Debugging Controls
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `<leader>dR` | Start remote debug | Launch remote debugging session (prompts for program arguments) |
+| `<leader>dc` | Continue | Continue execution until next breakpoint |
+| `<leader>dt` | Terminate | Stop debugging session |
+| `<leader>dp` | Pause | Pause execution (if supported by adapter) |
+
+#### Stepping Through Code
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `<leader>di` | Step into | Step into function calls |
+| `<leader>do` | Step over | Step over function calls (execute but don't enter) |
+| `<leader>dO` | Step out | Step out of current function |
+| `F10` | Step over | Alternative key for step over (LazyVim default) |
+| `F11` | Step into | Alternative key for step into (LazyVim default) |
+| `F12` | Step out | Alternative key for step out (LazyVim default) |
+
+#### Breakpoints
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `<leader>db` | Toggle breakpoint | Add/remove breakpoint at current line |
+| `<leader>dB` | Conditional breakpoint | Set breakpoint with condition (e.g., `i == 10`) |
+| `<leader>dL` | Clear all breakpoints | Remove all breakpoints (LazyVim default) |
+
+#### DAP UI & Windows
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `<leader>du` | Toggle DAP UI | Show/hide debugging interface panels |
+| `<leader>de` | Evaluate expression | Evaluate expression under cursor or selection |
+| `<leader>dl` | Show debug logs | Open debug log window |
+| `<leader>dh` | Hide debug logs | Close debug log window |
+
+**Stack Window Navigation:**
+- `<CR>` or `o` - Jump to source code location from stack frame
+- `q` - Close stack window
+
+#### Remote Debugging
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `<leader>dC` | Cleanup monitor | Stop and cleanup remote output monitoring |
+| `<leader>dM` | Monitor status | Check status of remote output monitor |
+| `<leader>dL` | Close deploy console | Close deployment log window |
+| `:DapShowOutput` | Show remote output | Open remote program stdout/stderr buffer |
 
 ## ⌨️ Key Mappings
 
