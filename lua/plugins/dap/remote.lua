@@ -92,7 +92,7 @@ local function get_cmake_cache_var(var_name)
 
   local buf = find_cache_buf()
   if not buf then
-    -- Buscar CMakeCache.txt desde el directorio actual del proyecto, no recursivamente en todo el sistema
+    -- Search for CMakeCache.txt from current project directory, not recursively in entire system
     local cwd = vim.fn.getcwd()
     debug_log("📂 Searching for CMakeCache.txt from: " .. cwd, vim.log.levels.INFO)
 
@@ -133,7 +133,7 @@ local function get_cmake_cache_var(var_name)
   end
 
   if not buf then
-    debug_log("❌ No se pudo abrir el buffer de CMakeCache.txt", vim.log.levels.ERROR)
+    debug_log("❌ Could not open CMakeCache.txt buffer", vim.log.levels.ERROR)
     return nil, "Failed to open CMakeCache buffer."
   end
 
@@ -145,7 +145,7 @@ local function get_cmake_cache_var(var_name)
     debug_log("🔍 Searching for " .. var_name .. " en: " .. cache_file, vim.log.levels.INFO)
   end
 
-  -- Debug: mostrar algunas líneas que contienen la variable buscada
+  -- Debug: show some lines containing the searched variable
   local matching_lines = {}
   for _, line in ipairs(lines) do
     if line:match(var_name) then
@@ -165,14 +165,14 @@ local function get_cmake_cache_var(var_name)
     -- donde TYPE puede ser: UNINITIALIZED, STRING, FILEPATH, PATH, BOOL, INTERNAL, etc.
     local var, var_type, value = line:match("^([%w_]+):([%w_]+)=(.+)$")
     if var == var_name then
-      -- Debug: mostrar la variable encontrada
-      debug_log(string.format("✅ Encontrada %s:%s=%s", var_name, var_type, value), vim.log.levels.INFO)
+      -- Debug: show the found variable
+      debug_log(string.format("✅ Found %s:%s=%s", var_name, var_type, value), vim.log.levels.INFO)
       return value
     end
   end
 
-  -- Debug: mostrar que no se encontró
-  debug_log(string.format("⚠️  Variable '%s' no encontrada", var_name), vim.log.levels.WARN)
+  -- Debug: show that it was not found
+  debug_log(string.format("⚠️  Variable '%s' not found", var_name), vim.log.levels.WARN)
   return nil, "Variable '" .. var_name .. "' not found in CMakeCache."
 end
 
@@ -625,7 +625,7 @@ end
 -- CMAKE INSTALL PATHS PARSING
 -- ============================================================================
 
--- Obtiene el directorio de compilación (binaryDir) desde CMakeCache.txt
+-- Gets the build directory (binaryDir) from CMakeCache.txt
 local function get_binary_dir()
   debug_log("🔍 Obteniendo binary_dir desde CMakeCache.txt...", vim.log.levels.INFO)
 
@@ -650,7 +650,7 @@ local function get_binary_dir()
     end
   end
 
-  -- Si no hay buffer, buscar el archivo
+  -- If there's no buffer, search for the file
   local cwd = vim.fn.getcwd()
   local common_paths = {
     cwd .. "/out/device-Debug/CMakeCache.txt",
@@ -669,7 +669,7 @@ local function get_binary_dir()
     end
   end
 
-  debug_log("❌ No se pudo determinar binary_dir", vim.log.levels.ERROR)
+  debug_log("❌ Could not determine binary_dir", vim.log.levels.ERROR)
   return nil
 end
 
@@ -699,7 +699,7 @@ local function parse_cmake_install_file(file_path)
       local files_section = install_block:match('FILES%s+(.-)%)') or install_block:match('FILES%s+(.+)$')
 
       if files_section then
-        -- Extraer todos los archivos entre comillas
+        -- Extract all files between quotes
         for file_path in files_section:gmatch('"([^"]+)"') do
           -- Determinar tipo normalizado
           local norm_type = "file"
@@ -979,7 +979,7 @@ local function get_additional_install_dirs()
   vim.notify(string.format("🔍 Searching for install(DIRECTORY) en: %s", manager_cmake), vim.log.levels.INFO)
 
   if vim.fn.filereadable(manager_cmake) ~= 1 then
-    vim.notify(string.format("⚠️  No se pudo leer: %s", manager_cmake), vim.log.levels.WARN)
+    vim.notify(string.format("⚠️  Could not read: %s", manager_cmake), vim.log.levels.WARN)
     return {}
   end
 
@@ -1011,7 +1011,7 @@ local function get_additional_install_dirs()
       })
     else
       vim.notify(
-        string.format("   ⚠️  No se pudo parsear: source=%s dest=%s", tostring(source_path), tostring(dest_path)),
+        string.format("   ⚠️  Could not parse: source=%s dest=%s", tostring(source_path), tostring(dest_path)),
         vim.log.levels.WARN
       )
     end
@@ -1405,7 +1405,7 @@ local function ensure_remote_program_async(final_callback)
   run_remote_async(string.format("mkdir -p %s", shell_quote(exe_install_path)), function(code, _)
     if code ~= 0 then
       log_to_console("❌ Could not create remote directory", vim.log.levels.ERROR)
-      final_callback(nil, "No se pudo crear " .. exe_install_path)
+      final_callback(nil, "Could not create " .. exe_install_path)
       return
     end
 
@@ -1414,7 +1414,7 @@ local function ensure_remote_program_async(final_callback)
     scp_upload_async(lpath, target, function(scp_code, scp_out)
       if scp_code ~= 0 then
         log_to_console(string.format("❌ SCP failed: %s", scp_out), vim.log.levels.ERROR)
-        final_callback(nil, "SCP falló: " .. scp_out)
+        final_callback(nil, "SCP failed: " .. scp_out)
         return
       end
 
@@ -1422,7 +1422,7 @@ local function ensure_remote_program_async(final_callback)
       run_remote_async(string.format("chmod +x %s", shell_quote(target)), function(ch_code, _)
         if ch_code ~= 0 then
           log_to_console("❌ chmod +x failed on target", vim.log.levels.ERROR)
-          final_callback(nil, "chmod +x falló en el target")
+          final_callback(nil, "chmod +x failed on target")
           return
         end
         log_to_console(string.format("✅ Executable deployed: %s", target), vim.log.levels.INFO)
@@ -1523,27 +1523,27 @@ local function ensure_remote_program()
   if exists_code ~= 0 then
     local mk_code = select(1, run_remote(string.format("mkdir -p %s", shell_quote(exe_install_path))))
     if mk_code ~= 0 then
-      return nil, "No se pudo crear " .. exe_install_path
+      return nil, "Could not create " .. exe_install_path
     end
   end
 
-  -- Upload ejecutable principal y hacer ejecutable
+  -- Upload main executable and make it executable
   log_to_console(string.format("📦 Uploading executable: %s -> %s", base, target), vim.log.levels.INFO)
   local scp_code, scp_out = scp_upload(lpath, target)
   if scp_code ~= 0 then
     log_to_console(string.format("❌ SCP failed: %s", scp_out), vim.log.levels.ERROR)
-    return nil, "SCP falló: " .. scp_out
+    return nil, "SCP failed: " .. scp_out
   end
 
   local ch_code = select(1, run_remote(string.format("chmod +x %s", shell_quote(target))))
   if ch_code ~= 0 then
     log_to_console("❌ chmod +x failed on target", vim.log.levels.ERROR)
-    return nil, "chmod +x falló en el target"
+    return nil, "chmod +x failed on target"
   end
   log_to_console(string.format("✅ Executable deployed: %s", target), vim.log.levels.INFO)
 
-  -- Subir también los plugins .so del directorio de build
-  -- Obtener el directorio raíz del build (donde está CMakeCache.txt)
+  -- Also upload .so plugins from build directory
+  -- Get the root build directory (where CMakeCache.txt is located)
   local cmake_cache_path = vim.fn.findfile("CMakeCache.txt", lpath .. ";")
   local build_dir = nil
 
