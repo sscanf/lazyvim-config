@@ -93,11 +93,27 @@ local function get_cmake_cache_var(var_name)
 
   local buf = find_cache_buf()
   if not buf then
-    -- Search for CMakeCache.txt from current project directory, not recursively in entire system
     local cwd = vim.fn.getcwd()
-    debug_log("📂 Searching for CMakeCache.txt from: " .. cwd, vim.log.levels.INFO)
+    local cache_path = nil
 
-    local cache_path = vim.fn.findfile("CMakeCache.txt", cwd .. ";") -- Busca en cwd y directorios padre
+    -- First: try to get the directory from cmake-tools.nvim (active preset)
+    local ok, cmake_tools = pcall(require, "cmake-tools")
+    if ok and cmake_tools.get_build_directory then
+      local build_dir = cmake_tools.get_build_directory()
+      if build_dir and build_dir.filename then
+        local cmake_tools_path = build_dir.filename .. "/CMakeCache.txt"
+        if vim.fn.filereadable(cmake_tools_path) == 1 then
+          cache_path = cmake_tools_path
+          debug_log("✅ CMakeCache.txt from cmake-tools preset: " .. cache_path, vim.log.levels.INFO)
+        end
+      end
+    end
+
+    -- Second: search in cwd and parent directories
+    if not cache_path or cache_path == "" then
+      debug_log("📂 Searching for CMakeCache.txt from: " .. cwd, vim.log.levels.INFO)
+      cache_path = vim.fn.findfile("CMakeCache.txt", cwd .. ";")
+    end
 
     if not cache_path or cache_path == "" then
       debug_log(
@@ -105,7 +121,7 @@ local function get_cmake_cache_var(var_name)
         vim.log.levels.INFO
       )
 
-      -- Segundo intento: buscar en subdirectorios comunes
+      -- Third: search in common subdirectories
       local common_paths = {
         cwd .. "/out/Debug/CMakeCache.txt",
         cwd .. "/out/Release/CMakeCache.txt",
