@@ -119,6 +119,84 @@ return {
     vim.keymap.set("n", "<leader>mr", "<cmd>Neominimap refresh<cr>", { desc = "Refresh minimap" })
     vim.keymap.set("n", "<leader>mf", "<cmd>Neominimap toggleFocus<cr>", { desc = "Toggle minimap focus" })
 
+    -- Auto-disable minimap when windows open to the right
+    local minimap_auto_disabled = false
+    local minimap_was_enabled = false
+
+    -- Check if there are windows to the right side (excluding floating windows and minimap)
+    local function has_windows_to_right()
+      local current_win = vim.api.nvim_get_current_win()
+      local wins = vim.api.nvim_tabpage_list_wins(0)
+      local editor_width = vim.o.columns
+
+      for _, win in ipairs(wins) do
+        local config = vim.api.nvim_win_get_config(win)
+        -- Skip floating windows (minimap is floating)
+        if config.relative == "" then
+          local pos = vim.api.nvim_win_get_position(win)
+          local width = vim.api.nvim_win_get_width(win)
+          local win_right_edge = pos[2] + width
+
+          -- Consider a window "to the right" if it starts past 70% of the editor width
+          if pos[2] > editor_width * 0.6 then
+            local bufnr = vim.api.nvim_win_get_buf(win)
+            local ft = vim.bo[bufnr].filetype
+            local bt = vim.bo[bufnr].buftype
+
+            -- Exclude certain filetypes that shouldn't trigger this
+            local excluded = { "neo-tree", "NvimTree", "neominimap" }
+            local is_excluded = false
+            for _, ex in ipairs(excluded) do
+              if ft == ex then
+                is_excluded = true
+                break
+              end
+            end
+
+            if not is_excluded then
+              return true
+            end
+          end
+        end
+      end
+      return false
+    end
+
+    local function update_minimap_visibility()
+      vim.defer_fn(function()
+        local has_right_windows = has_windows_to_right()
+
+        if has_right_windows and not minimap_auto_disabled then
+          -- Disable minimap
+          minimap_was_enabled = vim.g.neominimap and vim.g.neominimap.auto_enable
+          minimap_auto_disabled = true
+          vim.cmd("Neominimap off")
+        elseif not has_right_windows and minimap_auto_disabled then
+          -- Re-enable minimap
+          minimap_auto_disabled = false
+          if minimap_was_enabled then
+            vim.cmd("Neominimap on")
+          end
+        end
+      end, 50) -- Small delay to let window layout settle
+    end
+
+    -- Create autocommands for window events
+    local augroup = vim.api.nvim_create_augroup("NeominimapAutoToggle", { clear = true })
+
+    vim.api.nvim_create_autocmd({ "WinNew", "WinEnter", "BufWinEnter" }, {
+      group = augroup,
+      callback = update_minimap_visibility,
+    })
+
+    vim.api.nvim_create_autocmd("WinClosed", {
+      group = augroup,
+      callback = function()
+        -- Delay to let the window actually close
+        vim.defer_fn(update_minimap_visibility, 100)
+      end,
+    })
+
     vim.notify("Neominimap configurado correctamente", vim.log.levels.INFO)
   end,
 }
