@@ -2319,8 +2319,17 @@ dap.adapters.cppdbg = {
 -- COMMANDS AND KEYMAPS
 -- ============================================================================
 
--- Main debug command
-vim.keymap.set("n", "<leader>dR", _G.dap_remote_debug, { desc = "Debug Remote (con Argumentos)" })
+-- Main debug command (or continue if already debugging)
+vim.keymap.set("n", "<leader>dR", function()
+  local dap = require("dap")
+  if dap.session() then
+    -- Already in debug mode, just continue
+    dap.continue()
+  else
+    -- No active session, start remote debug
+    _G.dap_remote_debug()
+  end
+end, { desc = "Debug Remote (con Argumentos) / Continue" })
 
 -- Show output buffer
 vim.api.nvim_create_user_command("DapShowOutput", function()
