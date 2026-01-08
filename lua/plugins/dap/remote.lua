@@ -2420,6 +2420,10 @@ function _G.deploy_remote_program()
       vim.notify("❌ Deploy failed: " .. tostring(err), vim.log.levels.ERROR)
     else
       vim.notify("✅ Deploy completed", vim.log.levels.INFO)
+      -- Auto-close deploy console after successful deploy (2 second delay)
+      vim.defer_fn(function()
+        _G.close_deploy_console()
+      end, 2000)
     end
   end)
 end
