@@ -460,6 +460,9 @@ local function scp_upload_async(local_path, remote_path, callback)
     shell_quote(remote_path)
   )
 
+  -- Debug log to help diagnose SCP issues
+  log_to_console(string.format("   🔧 SCP: %s -> root@%s:%s", path_basename(local_path), host, remote_path), vim.log.levels.DEBUG)
+
   local stdout_data = {}
   local stderr_data = {}
 
@@ -483,7 +486,13 @@ local function scp_upload_async(local_path, remote_path, callback)
       end
     end,
     on_exit = function(_, exit_code, _)
-      local output = table.concat(stdout_data, "\n")
+      -- Return stderr if there's an error, otherwise stdout
+      local output
+      if exit_code ~= 0 and #stderr_data > 0 then
+        output = table.concat(stderr_data, "\n")
+      else
+        output = table.concat(stdout_data, "\n")
+      end
       callback(exit_code, output)
     end,
   })
@@ -1492,9 +1501,19 @@ local function ensure_remote_program_async(final_callback)
       return
     end
 
-    -- Step 2: Upload executable
-    log_to_console(string.format("📦 Uploading executable: %s -> %s", base, target), vim.log.levels.INFO)
-    scp_upload_async(lpath, target, function(scp_code, scp_out)
+    -- Step 1.5: Kill running process (BusyBox compatible)
+    local kill_cmd = string.format(
+      "ps | grep '%s' | grep -v grep | awk '{print $1}' | xargs kill -9 2>/dev/null || true",
+      base
+    )
+    log_to_console(string.format("🔪 Stopping running process: %s", base), vim.log.levels.INFO)
+    run_remote_async(kill_cmd, function(_, _)
+      -- Ignore exit code - process might not be running
+      -- Small delay to ensure process is fully stopped
+      vim.defer_fn(function()
+        -- Step 2: Upload executable
+        log_to_console(string.format("📦 Uploading executable: %s -> %s", base, target), vim.log.levels.INFO)
+        scp_upload_async(lpath, target, function(scp_code, scp_out)
       if scp_code ~= 0 then
         log_to_console(string.format("❌ SCP failed: %s", scp_out), vim.log.levels.ERROR)
         final_callback(nil, "SCP failed: " .. scp_out)
@@ -1572,10 +1591,12 @@ local function ensure_remote_program_async(final_callback)
         else
           -- No plugins, go to config directories
           upload_config_directories(target, final_callback)
-        end
+          end
+        end)
       end)
-    end)
-  end)
+      end, 100) -- vim.defer_fn delay
+    end) -- run_remote_async (kill)
+  end) -- run_remote_async (mkdir)
 end
 
 -- Synchronous version (kept for compatibility)
