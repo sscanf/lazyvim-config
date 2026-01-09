@@ -18,5 +18,23 @@ return {
   ft = { "h", "cpp", "hpp", "c", "cc", "cxx" },
   config = function()
     require("cppassist").setup()
+
+    -- Patch RemoveLeadingKeywords to handle custom macros like ZO_EXPORTABLE
+    local func = require("cppassist.func")
+    local original_remove = func.RemoveLeadingKeywords
+    func.RemoveLeadingKeywords = function(funcstr)
+      -- Remove custom export/visibility macros (add your macros here)
+      local custom_macros = {
+        "ZO_EXPORTABLE",
+        "ZO_EXPORT",
+        "DLL_EXPORT",
+        "API_EXPORT",
+        "__declspec%([^%)]+%)",  -- Windows __declspec(dllexport)
+      }
+      for _, macro in ipairs(custom_macros) do
+        funcstr = string.gsub(funcstr, "^" .. macro .. "%s+", "", 1)
+      end
+      return original_remove(funcstr)
+    end
   end,
 }
